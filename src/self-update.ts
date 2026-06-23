@@ -1,7 +1,7 @@
 // src/self-update.ts
 
 import { readAuthConfig, readInstalledVersion } from "./config.js";
-import { requestRuntimeDownload } from "./api-client.js";
+import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
 import { downloadAndInstall } from "./install.js";
 import type { DownloadResponse, RuntimeDownloadResult } from "./types.js";
 
@@ -37,6 +37,10 @@ export async function runSelfUpdate(
       auth.apiUrl,
     );
   } catch (err: unknown) {
+    if (err instanceof ApiError && err.reason !== "") {
+      console.error(`\n✖ ${formatTokenError(err)}`);
+      return 1;
+    }
     console.error(
       `API request failed: ${err instanceof Error ? err.message : String(err)}`,
     );

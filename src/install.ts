@@ -16,7 +16,7 @@ import {
 import { join } from "path";
 import { tmpdir } from "os";
 import { readAuthConfig } from "./config.js";
-import { requestRuntimeDownload } from "./api-client.js";
+import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
 import {
   ARCHIVE_PREFIX,
   ENGINES_DIR,
@@ -269,6 +269,10 @@ export async function runInstall(_args: readonly string[]): Promise<number> {
       auth.apiUrl,
     );
   } catch (err: unknown) {
+    if (err instanceof ApiError && err.reason !== "") {
+      console.error(`\n✖ ${formatTokenError(err)}`);
+      return 1;
+    }
     return fail(
       `API request failed: ${err instanceof Error ? err.message : String(err)}`,
     );

@@ -7,8 +7,47 @@ import type {
 } from "./types.js";
 import { DEFAULT_API_URL } from "./constants.js";
 
-function apiUrl(config: { apiUrl: string } | null): string {
-  return config?.apiUrl ?? DEFAULT_API_URL;
+/**
+ * Structured error from API calls. Carries the HTTP status and,
+ * when the server returned a JSON body with a "reason" field,
+ * the machine-readable reason string (e.g. "revoked", "expired",
+ * "not_found").
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly reason: string;
+
+  constructor(status: number, reason: string) {
+    const msg =
+      reason !== ""
+        ? `${reason} (HTTP ${String(status)})`
+        : `HTTP ${String(status)}`;
+    super(msg);
+    this.name = "ApiError";
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+const TOKEN_REJECTION_MESSAGES: Readonly<Record<string, string>> = {
+  revoked:
+    "Access token revoked. Your access to Gabion has been terminated.\n  Run 'gabion uninstall' to remove the runtime.\n  Project files are not affected.",
+  expired:
+    "Access token expired. Request a new token from the author.",
+  not_found:
+    "Access token not recognized. Check the token and try again.",
+};
+
+/**
+ * Format a human-readable error message from an ApiError whose reason
+ * corresponds to a token rejection (revoked, expired, not_found).
+ * Falls back to a generic message for unknown reasons.
+ */
+export function formatTokenError(error: ApiError): string {
+  if (error.reason !== "") {
+    return TOKEN_REJECTION_MESSAGES[error.reason] ?? `Token rejected: ${error.reason}`;
+  }
+  return `API request failed (HTTP ${String(error.status)})`;
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -18,7 +57,16 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`API request failed: HTTP ${String(response.status)}`);
+    let reason = "";
+    try {
+      const errorBody = (await response.json()) as Record<string, unknown>;
+      if (typeof errorBody["reason"] === "string") {
+        reason = errorBody["reason"];
+      }
+    } catch {
+      // Response body is not parseable JSON — reason stays empty
+    }
+    throw new ApiError(response.status, reason);
   }
   return (await response.json()) as T;
 }
@@ -46,7 +94,7 @@ export async function fetchLatestVersion(
   const url = `${baseUrl ?? DEFAULT_API_URL}/api/runtime/latest`;
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`API request failed: HTTP ${String(response.status)}`);
+    throw new ApiError(response.status, "");
   }
   return (await response.json()) as LatestResponse;
 }
