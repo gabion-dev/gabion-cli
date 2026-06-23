@@ -15,13 +15,20 @@ export function delegateToFullCli(args: readonly string[]): number {
   const runtimeNodeModules = join(RUNTIME_DIR, "node_modules");
 
   if (!existsSync(runtimeNodeModules)) {
-    console.error("Gabion runtime not installed. Run: gabion install");
+    console.error(
+      "Gabion runtime is not installed.\n\n" +
+      "  Install it first:\n\n" +
+      "       gabion install",
+    );
     return 1;
   }
 
   const cliEntry = join(RUNTIME_DIR, "cli", "gabion.ts");
   if (!existsSync(cliEntry)) {
-    console.error("Gabion CLI entry point missing. Run: gabion install");
+    console.error(
+      "Gabion CLI entry point is missing. Re-install the runtime:\n\n" +
+      "       gabion install",
+    );
     return 1;
   }
 

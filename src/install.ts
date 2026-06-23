@@ -253,7 +253,14 @@ export async function downloadAndInstall(
 export async function runInstall(_args: readonly string[]): Promise<number> {
   const auth = readAuthConfig();
   if (auth === null) {
-    console.error("Not authenticated. Run: gabion auth <token>");
+    console.error(
+      "Gabion requires an access token to download the runtime.\n\n" +
+      "  1. Get your token from the project author\n" +
+      "  2. Authenticate:\n\n" +
+      "       gabion auth YOUR_TOKEN\n\n" +
+      "  3. Then re-run:\n\n" +
+      "       gabion install",
+    );
     return 1;
   }
 

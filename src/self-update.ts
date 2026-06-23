@@ -16,13 +16,24 @@ export async function runSelfUpdate(
 ): Promise<number> {
   const auth = readAuthConfig();
   if (auth === null) {
-    console.error("Not authenticated. Run: gabion auth <token>");
+    console.error(
+      "Gabion requires an access token to check for updates.\n\n" +
+      "  1. Get your token from the project author\n" +
+      "  2. Authenticate:\n\n" +
+      "       gabion auth YOUR_TOKEN\n\n" +
+      "  3. Then re-run:\n\n" +
+      "       gabion self-update",
+    );
     return 1;
   }
 
   const versionInfo = readInstalledVersion();
   if (versionInfo === null) {
-    console.error("Gabion runtime not installed. Run: gabion install");
+    console.error(
+      "Gabion runtime is not installed.\n\n" +
+      "  Install it first:\n\n" +
+      "       gabion install",
+    );
     return 1;
   }
 

@@ -31,11 +31,19 @@ export class ApiError extends Error {
 
 const TOKEN_REJECTION_MESSAGES: Readonly<Record<string, string>> = {
   revoked:
-    "Access token revoked. Your access to Gabion has been terminated.\n  Run 'gabion uninstall' to remove the runtime.\n  Project files are not affected.",
+    "Access token revoked. Your access to Gabion has been terminated.\n\n" +
+    "  To remove the runtime:\n\n" +
+    "       gabion uninstall\n\n" +
+    "  Project files are not affected.",
   expired:
-    "Access token expired. Request a new token from the author.",
+    "Access token expired.\n\n" +
+    "  1. Request a new token from the project author\n" +
+    "  2. Authenticate with the new token:\n\n" +
+    "       gabion auth YOUR_TOKEN",
   not_found:
-    "Access token not recognized. Check the token and try again.",
+    "Access token not recognized.\n\n" +
+    "  Authenticate with a valid token:\n\n" +
+    "       gabion auth YOUR_TOKEN",
 };
 
 /**
