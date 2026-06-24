@@ -34,16 +34,16 @@ const TOKEN_REJECTION_MESSAGES: Readonly<Record<string, string>> = {
     "Access token revoked. Your access to Gabion has been terminated.\n\n" +
     "  To remove the runtime:\n\n" +
     "       gabion uninstall\n\n" +
-    "  Project files are not affected.",
+    "  Project files are not affected.\n",
   expired:
     "Access token expired.\n\n" +
     "  1. Request a new token from the project author\n" +
     "  2. Authenticate with the new token:\n\n" +
-    "       gabion auth YOUR_TOKEN",
+    "       gabion auth YOUR_TOKEN\n",
   not_found:
     "Access token not recognized.\n\n" +
     "  Authenticate with a valid token:\n\n" +
-    "       gabion auth YOUR_TOKEN",
+    "       gabion auth YOUR_TOKEN\n",
 };
 
 /**

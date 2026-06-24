@@ -18,7 +18,7 @@ export function delegateToFullCli(args: readonly string[]): number {
     console.error(
       "Gabion runtime is not installed.\n\n" +
       "  Install it first:\n\n" +
-      "       gabion install",
+      "       gabion install\n",
     );
     return 1;
   }
@@ -27,7 +27,7 @@ export function delegateToFullCli(args: readonly string[]): number {
   if (!existsSync(cliEntry)) {
     console.error(
       "Gabion CLI entry point is missing. Re-install the runtime:\n\n" +
-      "       gabion install",
+      "       gabion install\n",
     );
     return 1;
   }

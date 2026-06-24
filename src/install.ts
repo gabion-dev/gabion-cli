@@ -259,7 +259,7 @@ export async function runInstall(_args: readonly string[]): Promise<number> {
       "  2. Authenticate:\n\n" +
       "       gabion auth YOUR_TOKEN\n\n" +
       "  3. Then re-run:\n\n" +
-      "       gabion install",
+      "       gabion install\n",
     );
     return 1;
   }

@@ -22,7 +22,7 @@ export async function runSelfUpdate(
       "  2. Authenticate:\n\n" +
       "       gabion auth YOUR_TOKEN\n\n" +
       "  3. Then re-run:\n\n" +
-      "       gabion self-update",
+      "       gabion self-update\n",
     );
     return 1;
   }
@@ -32,7 +32,7 @@ export async function runSelfUpdate(
     console.error(
       "Gabion runtime is not installed.\n\n" +
       "  Install it first:\n\n" +
-      "       gabion install",
+      "       gabion install\n",
     );
     return 1;
   }
