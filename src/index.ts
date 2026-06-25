@@ -6,12 +6,14 @@ import { runAuth } from "./auth.js";
 import { runInstall } from "./install.js";
 import { runSelfUpdate } from "./self-update.js";
 import { runDoctor } from "./doctor.js";
+import { runUninstall } from "./uninstall.js";
 import { delegateToFullCli } from "./delegate.js";
 
 /** Commands handled directly by the thin CLI. */
 const LOCAL_COMMANDS: Readonly<Record<string, CommandHandler>> = {
   auth: runAuth,
   install: runInstall,
+  uninstall: runUninstall,
   "self-update": runSelfUpdate,
   doctor: runDoctor,
 };
@@ -24,6 +26,7 @@ function printUsage(): void {
   console.log("  auth --status    Show current authentication status");
   console.log("  auth --revoke    Remove saved token");
   console.log("  install          Download and install the Gabion runtime");
+  console.log("  uninstall        Remove the Gabion runtime from this machine");
   console.log("  self-update      Check for and install runtime updates");
   console.log("  doctor           Check system prerequisites and installation");
   console.log("");

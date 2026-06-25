@@ -35,4 +35,10 @@ export interface VersionInfo {
   readonly builtAt: string;
 }
 
+/** Minimal shape of an entry in ~/.gabion/instances.json for PID checking. */
+export interface RegistryInstanceEntry {
+  readonly name: string;
+  readonly supervisorPid: number;
+}
+
 export type CommandHandler = (args: readonly string[]) => Promise<number>;
