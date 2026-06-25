@@ -77,11 +77,11 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
     if (totalBytes > 0) {
       const pct = Math.round((receivedBytes / totalBytes) * 100);
       process.stdout.write(
-        `\r   Downloading... ${String(pct)}% (${formatBytes(receivedBytes)} / ${formatBytes(totalBytes)})`,
+        `\r\x1B[K   Downloading... ${String(pct)}% (${formatBytes(receivedBytes)} / ${formatBytes(totalBytes)})`,
       );
     } else {
       process.stdout.write(
-        `\r   Downloading... ${formatBytes(receivedBytes)}`,
+        `\r\x1B[K   Downloading... ${formatBytes(receivedBytes)}`,
       );
     }
   }
