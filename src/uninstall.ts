@@ -6,41 +6,45 @@
  * artifact it removes. A broken runtime (corrupted node_modules, missing tsx)
  * must not prevent its own removal.
  *
+ * Strategy: remove everything inside ~/.gabion/ EXCEPT auth.json.
+ * This is more robust than maintaining a whitelist of paths — any future
+ * artifacts (caches, logs, stamps) are cleaned automatically.
+ *
  * Preserved: auth.json (use `gabion auth --revoke` to remove separately).
  * Never touched: per-project files under user's workspace.
  */
 
-import { existsSync, readFileSync, rmSync } from "fs";
-import { createInterface } from "readline";
 import {
-  BIN_DIR,
-  ENGINES_DIR,
-  GABION_HOME,
-  INSTANCES_JSON_PATH,
-  NODE_MODULES_LINK,
-  RUNTIME_DIR,
-  TEMPLATE_DIR,
-  VERSION_JSON_PATH,
-} from "./constants.js";
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "fs";
+import { createInterface } from "readline";
+import { join } from "path";
+import { GABION_HOME, INSTANCES_JSON_PATH } from "./constants.js";
 import type { RegistryInstanceEntry } from "./types.js";
 
 /**
- * Paths removed during uninstall. Order is not significant — rmSync
- * handles missing entries gracefully.
- *
- * auth.json is deliberately excluded: re-installation should not force
- * the user to re-authenticate. Per-project directories (~/projects/foo/.gabion/)
- * are outside GABION_HOME and are never touched.
+ * The only file preserved during uninstall. Re-authentication after
+ * reinstall would be a poor experience — the token outlives the runtime.
  */
-const REMOVABLE_PATHS: readonly string[] = [
-  RUNTIME_DIR,
-  ENGINES_DIR,
-  TEMPLATE_DIR,
-  BIN_DIR,
-  NODE_MODULES_LINK,
-  VERSION_JSON_PATH,
-  INSTANCES_JSON_PATH,
-];
+const PRESERVED_FILES: ReadonlySet<string> = new Set(["auth.json"]);
+
+/**
+ * Check whether a path exists, including broken symlinks.
+ * Unlike existsSync, lstatSync does not follow symlinks — a dangling
+ * symlink (target deleted) still returns true, allowing rmSync to remove it.
+ */
+function pathOrLinkExists(target: string): boolean {
+  try {
+    lstatSync(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Check whether a process with the given PID is alive.
@@ -126,8 +130,10 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
     return 0;
   }
 
-  const hasAnything = REMOVABLE_PATHS.some((p) => existsSync(p));
-  if (!hasAnything) {
+  const entries = readdirSync(GABION_HOME);
+  const removable = entries.filter((name) => !PRESERVED_FILES.has(name));
+
+  if (removable.length === 0) {
     console.log("Nothing to uninstall — Gabion runtime is not installed.");
     return 0;
   }
@@ -166,9 +172,10 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
   }
 
   let removedCount = 0;
-  for (const targetPath of REMOVABLE_PATHS) {
-    if (existsSync(targetPath)) {
-      rmSync(targetPath, { recursive: true, force: true });
+  for (const name of removable) {
+    const fullPath = join(GABION_HOME, name);
+    if (pathOrLinkExists(fullPath)) {
+      rmSync(fullPath, { recursive: true, force: true });
       removedCount++;
     }
   }
@@ -176,6 +183,7 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
   console.log(`✅ Gabion uninstalled (${String(removedCount)} items removed)`);
   console.log("   To re-install: gabion install");
   console.log("   To remove auth token: gabion auth --revoke");
+  console.log("   To remove the CLI itself: npm uninstall -g gabion");
 
   return 0;
 }

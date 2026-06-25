@@ -17,10 +17,6 @@ export const ENGINES_DIR = join(GABION_HOME, ".engines");
 
 export const TEMPLATE_DIR = join(GABION_HOME, "template");
 
-export const BIN_DIR = join(GABION_HOME, "bin");
-
-export const NODE_MODULES_LINK = join(GABION_HOME, "node_modules");
-
 export const INSTANCES_JSON_PATH = join(GABION_HOME, "instances.json");
 
 export const TOKEN_PREFIX = "gbt_";
