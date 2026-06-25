@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 // src/install.ts
 
 import { createHash } from "crypto";
