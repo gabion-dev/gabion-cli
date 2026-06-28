@@ -37,6 +37,12 @@ function printUsage(): void {
   console.log("  restart          Restart the current instance");
   console.log("  instances        List all registered instances");
   console.log("  uninstance <n>   Force-stop an instance by name");
+  console.log("");
+  console.log("Module management (delegated to full runtime CLI):");
+  console.log("  module install   Install a module from template or platform");
+  console.log("  module remove    Remove an installed module");
+  console.log("  module restore   Restore a standard module from template");
+  console.log("  module list      List installed modules and contracts");
 }
 
 async function main(): Promise<void> {
