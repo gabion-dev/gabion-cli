@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 // src/index.ts
 
+import { existsSync, readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+import { homedir } from "os";
+
 import type { CommandHandler } from "./types.js";
 import { runAuth } from "./auth.js";
 import { runInstall } from "./install.js";
@@ -17,6 +22,20 @@ const LOCAL_COMMANDS: Readonly<Record<string, CommandHandler>> = {
   "self-update": runSelfUpdate,
   doctor: runDoctor,
 };
+
+function printVersion(): void {
+  const __filename = fileURLToPath(import.meta.url);
+  const pkgPath = join(dirname(__filename), "..", "package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
+
+  const versionPath = join(homedir(), ".gabion", "version.json");
+  if (existsSync(versionPath)) {
+    const runtime = JSON.parse(readFileSync(versionPath, "utf-8")) as { version: string };
+    console.log(`gabion ${pkg.version} (runtime ${runtime.version})`);
+  } else {
+    console.log(`gabion ${pkg.version} (runtime not installed)`);
+  }
+}
 
 function printUsage(): void {
   console.log("Usage: gabion <command> [options]");
@@ -48,6 +67,11 @@ function printUsage(): void {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const commandName = args[0];
+
+  if (commandName === "--version" || commandName === "-v") {
+    printVersion();
+    process.exit(0);
+  }
 
   if (
     commandName === undefined ||
