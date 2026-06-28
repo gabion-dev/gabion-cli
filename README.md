@@ -23,6 +23,13 @@ gabion dev
 
 ## Commands
 
+### General
+
+|         Command       |                   Description               |
+|-----------------------|---------------------------------------------|
+| `gabion --version`    | Show CLI and runtime version                |
+| `gabion --help`       | Show available commands                     |
+
 ### Setup (handled by thin CLI)
 
 |         Command       |                   Description               |
