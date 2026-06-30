@@ -25,10 +25,10 @@ gabion dev
 
 ### General
 
-|         Command       |                   Description               |
-|-----------------------|---------------------------------------------|
-| `gabion --version`    | Show CLI and runtime version                |
-| `gabion --help`       | Show available commands                     |
+|       Command     |           Description        |
+|-------------------|------------------------------|
+| `gabion --version`| Show CLI and runtime version |
+| `gabion --help`   | Show available commands      |
 
 ### Setup (handled by thin CLI)
 
@@ -55,20 +55,23 @@ gabion dev
 
 ### Module Management (delegated to full runtime CLI)
 
-|              Command                  |                  Description               |
-|---------------------------------------|--------------------------------------------|
-| `gabion module install <name>`        | Install a module from template or platform |
-| `gabion module remove <name>`         | Remove an installed module                 |
-| `gabion module restore <name>`        | Restore a standard module from template    |
-| `gabion module replace-starter <name>`| Replace the visual starter                 |
-| `gabion module list`                  | List installed modules and contracts       |
+|              Command                  |                  Description                  |
+|---------------------------------------|-----------------------------------------------|
+| `gabion module install <name>`        | Install a module from template or platform    |
+| `gabion module remove <name>`         | Remove an installed module                    |
+| `gabion module restore <name>`        | Restore a standard module from template       |
+| `gabion module replace <old> <new>`   | Atomically replace one module with another    |
+| `gabion module replace-starter <name>`| Replace the visual starter                    |
+| `gabion module status`                | Show modification status of installed modules |
+| `gabion module package <dir> <ver>`   | Build a distributable module archive          |
+| `gabion module list`                  | List installed modules and contracts          |
 
 ## How It Works
 
 1. `gabion auth` verifies your token against `api.gabion.dev` and saves it to `~/.gabion/auth.json`.
 2. `gabion install` requests a signed download URL, fetches the runtime archive, verifies its SHA-256 checksum, unpacks it into `~/.gabion/`, installs dependencies, downloads engines, and builds JARs. A project template is cached at `~/.gabion/template/` for `gabion init`.
-3. `gabion init` creates a new project from the cached template with all standard modules pre-installed.
-4. `gabion module` commands manage modules within a project: `install` resolves the module from the vendored template or downloads it from the platform (S3 via signed URL), validates the contract dependency graph, copies files into the six connection points, and updates `gabion.manifest.json`. `remove` checks that no remaining module depends on the removed module's contracts. `restore` replaces modified files with the original template version.
+3. `gabion init` creates a new project from the cached template with all standard modules pre-installed and an initial git commit tagged `gabion/init`.
+4. `gabion module` commands manage modules within a project: `install` resolves the module from the vendored template or downloads it from the platform (S3 via signed URL), validates the contract dependency graph, copies files into the six connection points, updates `gabion.manifest.json`, and creates a git baseline tag. `remove` checks that no remaining module depends on the removed module's contracts. `restore` replaces modified files with the original template version. `replace` atomically swaps one module for another, validating the contract graph against the transitive state. `status` compares current files against baseline tags to show accumulated modifications.
 5. All development commands (`dev`, `stop`, `restart`, `instances`, `uninstance`) and module commands delegate to the full CLI at `~/.gabion/runtime/cli/gabion.ts`.
 
 ## File Layout
