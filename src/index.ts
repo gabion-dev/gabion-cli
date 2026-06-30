@@ -58,12 +58,14 @@ function printUsage(): void {
   console.log("  uninstance <n>   Force-stop an instance by name");
   console.log("");
   console.log("Module management (delegated to full runtime CLI):");
-  console.log("  module install        Install a module from template or platform");
-  console.log("  module remove         Remove an installed module");
-  console.log("  module restore        Restore a standard module from template");
+  console.log("  module install          Install a module from template or platform");
+  console.log("  module remove           Remove an installed module");
+  console.log("  module restore          Restore a standard module from template");
+  console.log("  module replace          Atomically replace one module with another");
   console.log("  module replace-starter  Replace the visual starter");
-  console.log("  module package        Build a distributable module archive");
-  console.log("  module list           List installed modules and contracts");
+  console.log("  module status           Show modification status of installed modules");
+  console.log("  module package          Build a distributable module archive");
+  console.log("  module list             List installed modules and contracts");
 }
 
 async function main(): Promise<void> {
