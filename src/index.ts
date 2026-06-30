@@ -67,6 +67,13 @@ function printUsage(): void {
   console.log("  module status           Show modification status of installed modules");
   console.log("  module package          Build a distributable module archive");
   console.log("  module list             List installed modules and contracts");
+  console.log("");
+  console.log("Solution management (delegated to full runtime CLI):");
+  console.log("  solution install        Install a solution from platform or local path");
+  console.log("  solution remove         Remove a solution and restore replaced modules");
+  console.log("  solution package        Build a distributable solution archive");
+  console.log("  solution export         Export solution files for a public repository");
+  console.log("  solution list           List installed solutions");
 }
 
 async function main(): Promise<void> {

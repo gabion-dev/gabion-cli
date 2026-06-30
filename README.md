@@ -61,10 +61,21 @@ gabion dev
 | `gabion module remove <name>`         | Remove an installed module                    |
 | `gabion module restore <name>`        | Restore a standard module from template       |
 | `gabion module replace <old> <new>`   | Atomically replace one module with another    |
+| `gabion module export <mod> --to <p>` | Export module files for a public repository   |
 | `gabion module replace-starter <name>`| Replace the visual starter                    |
 | `gabion module status`                | Show modification status of installed modules |
-| `gabion module package <dir> <ver>`   | Build a distributable module archive          |
+| `gabion module package <mod> <ver>`   | Build a distributable module archive          |
 | `gabion module list`                  | List installed modules and contracts          |
+
+### Solution Management (delegated to full runtime CLI)
+
+|              Command             |                    Description                 |
+|----------------------------------|------------------------------------------------|
+| `gabion solution install <name>` | Install a solution from platform or local path |
+| `gabion solution remove <name>`  | Remove a solution and restore replaced modules |
+| `gabion solution package <ver>`  | Build a distributable solution archive         |
+| `gabion solution export --to <p>`| Export solution files for a public repository  |
+| `gabion solution list`           | List installed solutions                       |
 
 ## How It Works
 
@@ -72,7 +83,8 @@ gabion dev
 2. `gabion install` requests a signed download URL, fetches the runtime archive, verifies its SHA-256 checksum, unpacks it into `~/.gabion/`, installs dependencies, downloads engines, and builds JARs. A project template is cached at `~/.gabion/template/` for `gabion init`.
 3. `gabion init` creates a new project from the cached template with all standard modules pre-installed and an initial git commit tagged `gabion/init`.
 4. `gabion module` commands manage modules within a project: `install` resolves the module from the vendored template or downloads it from the platform (S3 via signed URL), validates the contract dependency graph, copies files into the six connection points, updates `gabion.manifest.json`, and creates a git baseline tag. `remove` checks that no remaining module depends on the removed module's contracts. `restore` replaces modified files with the original template version. `replace` atomically swaps one module for another, validating the contract graph against the transitive state. `status` compares current files against baseline tags to show accumulated modifications.
-5. All development commands (`dev`, `stop`, `restart`, `instances`, `uninstance`) and module commands delegate to the full CLI at `~/.gabion/runtime/cli/gabion.ts`.
+5. `gabion solution` commands manage multi-module solutions: `install` reads `gabion-solution.json`, plans each module via the Installation Planner (detecting conflicts and determining keep/replace/choose actions), and installs the full set as a unit. `remove` reverses the installation, restoring any replaced modules from the vendored template. `package` and `export` build distributable archives or populate public repository directories.
+6. All development commands (`dev`, `stop`, `restart`, `instances`, `uninstance`), module commands, and solution commands delegate to the full CLI at `~/.gabion/runtime/cli/gabion.ts`.
 
 ## File Layout
 
