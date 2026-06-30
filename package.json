@@ -1,6 +1,6 @@
 {
   "name": "gabion",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Gabion development framework — thin CLI for authenticated runtime distribution",
   "type": "module",
   "bin": {
