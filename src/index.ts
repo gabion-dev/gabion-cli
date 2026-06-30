@@ -62,6 +62,7 @@ function printUsage(): void {
   console.log("  module remove           Remove an installed module");
   console.log("  module restore          Restore a standard module from template");
   console.log("  module replace          Atomically replace one module with another");
+  console.log("  module export           Export module files for a public repository");
   console.log("  module replace-starter  Replace the visual starter");
   console.log("  module status           Show modification status of installed modules");
   console.log("  module package          Build a distributable module archive");
