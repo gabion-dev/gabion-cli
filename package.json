@@ -8,13 +8,11 @@
   },
   "files": [
     "dist",
-    "postinstall.js",
     "README.md"
   ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "npm run build",
-    "postinstall": "node postinstall.js"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "gabion",
