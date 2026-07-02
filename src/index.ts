@@ -63,10 +63,12 @@ function printUsage(): void {
   console.log("  module restore          Restore a standard module from template");
   console.log("  module replace          Atomically replace one module with another");
   console.log("  module export           Export module files for a public repository");
-  console.log("  module replace-starter  Replace the visual starter");
   console.log("  module status           Show modification status of installed modules");
   console.log("  module package          Build a distributable module archive");
   console.log("  module list             List installed modules and contracts");
+  console.log("");
+  console.log("Starter management (delegated to full runtime CLI):");
+  console.log("  starter replace         Replace the visual starter");
   console.log("");
   console.log("Solution management (delegated to full runtime CLI):");
   console.log("  solution install        Install a solution from platform or local path");
