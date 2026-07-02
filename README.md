@@ -68,7 +68,7 @@ gabion dev
 
 ### Starter Management (delegated to full runtime CLI)
 
-|             Command            |          Description       |
+|             Command            |           Description      |
 |--------------------------------|----------------------------|
 | `gabion starter replace <name>`| Replace the visual starter |
 
