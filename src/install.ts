@@ -215,7 +215,7 @@ export async function downloadAndInstall(
 
     logStep(5, totalSteps, "Installing runtime dependencies");
     approveRuntimeScripts(RUNTIME_DIR);
-    const npmResult = spawnSync("npm", ["install", "--omit=dev"], {
+    const npmResult = spawnSync("npm", ["install", "--omit=dev", "--no-fund", "--no-audit"], {
       cwd: RUNTIME_DIR,
       stdio: "inherit",
     });
