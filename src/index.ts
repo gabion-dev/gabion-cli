@@ -69,6 +69,7 @@ function printUsage(): void {
   console.log("");
   console.log("Starter management (delegated to full runtime CLI):");
   console.log("  starter replace         Replace the visual starter");
+  console.log("  starter package         Build a distributable starter archive");
   console.log("");
   console.log("Solution management (delegated to full runtime CLI):");
   console.log("  solution install        Install a solution from platform or local path");
