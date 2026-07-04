@@ -40,7 +40,19 @@ const PRESERVED_FILES: ReadonlySet<string> = new Set(["auth.json"]);
  * (same reasoning as GABION_HOME living in this package's constants).
  */
 const GATEWAY_HTTP_PORT = 8099;
+
+/**
+ * Autostart identifiers, duplicated from the runtime's autostart module
+ * on purpose: the thin CLI must not depend on the artifact it removes.
+ */
 const GATEWAY_UNIT_NAME = "gabion-gateway.service";
+const LAUNCHD_LABEL = "dev.gabion.gateway";
+const WINDOWS_RUN_VALUE_NAME = "GabionGateway";
+const WINDOWS_RUN_KEY_PATH =
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+
+/** macOS resolver hook file written by `gabion install` (sudo). */
+const MACOS_RESOLVER_PATH = "/etc/resolver/gabion.localhost";
 
 /**
  * Bound for probing a possibly-foreign socket. This is not a readiness
@@ -96,31 +108,88 @@ async function stopGatewayIfRunning(): Promise<void> {
 }
 
 /**
- * Remove the systemd user autostart unit installed by `gabion install`.
- * systemctl failures are ignored deliberately: absence of a user
- * systemd manager is an expected environment, not an error channel —
- * the unit file itself is still removed if present.
+ * Remove the per-OS autostart installed by `gabion install`. Tool
+ * failures are ignored deliberately: absence of the mechanism (no user
+ * systemd, key never written) is an expected environment, not an error
+ * channel — file artifacts are still removed when present.
  */
 function removeGatewayAutostart(): void {
-  if (process.platform !== "linux") {
+  if (process.platform === "linux") {
+    // disable --now also stops a systemd-owned gateway; a detached one
+    // was already stopped via /internal/shutdown above.
+    spawnSync("systemctl", ["--user", "disable", "--now", GATEWAY_UNIT_NAME], {
+      stdio: "ignore",
+    });
+    const unitPath = join(
+      homedir(),
+      ".config",
+      "systemd",
+      "user",
+      GATEWAY_UNIT_NAME,
+    );
+    if (pathOrLinkExists(unitPath)) {
+      rmSync(unitPath, { force: true });
+      spawnSync("systemctl", ["--user", "daemon-reload"], { stdio: "ignore" });
+      console.log("   Autostart unit removed");
+    }
     return;
   }
-  // disable --now also stops a systemd-owned gateway; a detached one
-  // was already stopped via /internal/shutdown above.
-  spawnSync("systemctl", ["--user", "disable", "--now", GATEWAY_UNIT_NAME], {
-    stdio: "ignore",
+
+  if (process.platform === "darwin") {
+    const plistPath = join(
+      homedir(),
+      "Library",
+      "LaunchAgents",
+      `${LAUNCHD_LABEL}.plist`,
+    );
+    if (typeof process.getuid === "function") {
+      spawnSync(
+        "launchctl",
+        ["bootout", `gui/${String(process.getuid())}/${LAUNCHD_LABEL}`],
+        { stdio: "ignore" },
+      );
+    }
+    if (pathOrLinkExists(plistPath)) {
+      rmSync(plistPath, { force: true });
+      console.log("   Autostart agent removed");
+    }
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawnSync(
+      "reg",
+      ["delete", WINDOWS_RUN_KEY_PATH, "/v", WINDOWS_RUN_VALUE_NAME, "/f"],
+      { stdio: "ignore" },
+    );
+    // The VBS launcher lives inside ~/.gabion/bin — the blanket removal
+    // below deletes it with the rest of the runtime.
+    console.log("   Autostart Run key removed");
+  }
+}
+
+/**
+ * Remove the macOS resolver hook. It was written with sudo, so its
+ * removal needs sudo too; stdio is inherited so sudo can prompt. A
+ * declined prompt degrades to a warning — a stale hook pointing at a
+ * dead port is inert (the resolver falls through when nothing answers).
+ */
+function removeMacResolverHook(): void {
+  if (process.platform !== "darwin") {
+    return;
+  }
+  if (!pathOrLinkExists(MACOS_RESOLVER_PATH)) {
+    return;
+  }
+  const res = spawnSync("sudo", ["rm", "-f", MACOS_RESOLVER_PATH], {
+    stdio: "inherit",
   });
-  const unitPath = join(
-    homedir(),
-    ".config",
-    "systemd",
-    "user",
-    GATEWAY_UNIT_NAME,
-  );
-  if (pathOrLinkExists(unitPath)) {
-    rmSync(unitPath, { force: true });
-    spawnSync("systemctl", ["--user", "daemon-reload"], { stdio: "ignore" });
-    console.log("   Autostart unit removed");
+  if (res.status === 0) {
+    console.log("   Resolver hook removed");
+  } else {
+    console.warn(
+      `   ⚠️  Could not remove ${MACOS_RESOLVER_PATH} (sudo declined) — remove it manually`,
+    );
   }
 }
 
