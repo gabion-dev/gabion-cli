@@ -339,6 +339,7 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
   // reaches it.
   await stopGatewayIfRunning();
   removeGatewayAutostart();
+  removeMacResolverHook();
 
   let removedCount = 0;
   for (const name of removable) {
