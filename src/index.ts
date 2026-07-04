@@ -56,6 +56,9 @@ function printUsage(): void {
   console.log("  restart          Restart the current instance");
   console.log("  instances        List all registered instances");
   console.log("  uninstance <n>   Force-stop an instance by name");
+  console.log("  gateway status   Show gateway health, name resolution, instances");
+  console.log("  gateway start    Start the machine-global gateway");
+  console.log("  gateway stop     Stop the machine-global gateway");
   console.log("");
   console.log("Module management (delegated to full runtime CLI):");
   console.log("  module install          Install a module from template or platform");

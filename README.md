@@ -44,14 +44,17 @@ gabion dev
 
 ### Development (delegated to full runtime CLI)
 
-|           Command         |           Description          |
-|---------------------------|--------------------------------|
-| `gabion dev`              | Start the development instance |
-| `gabion init <name>`      | Create a new project           |
-| `gabion stop`             | Stop the running instance      |
-| `gabion restart`          | Restart the current instance   |
-| `gabion instances`        | List all registered instances  |
-| `gabion uninstance <name>`| Force-stop an instance by name |
+|           Command         |                     Description                    |
+|---------------------------|----------------------------------------------------|
+| `gabion dev`              | Start the development instance                     |
+| `gabion init <name>`      | Create a new project                               |
+| `gabion stop`             | Stop the running instance                          |
+| `gabion restart`          | Restart the current instance                       |
+| `gabion instances`        | List all registered instances                      |
+| `gabion uninstance <name>`| Force-stop an instance by name                     |
+| `gabion gateway status`   | Show gateway health, name resolution and instances |
+| `gabion gateway start`    | Start the machine-global gateway                   |
+| `gabion gateway stop`     | Stop the machine-global gateway                    |
 
 ### Module Management (delegated to full runtime CLI)
 
@@ -91,7 +94,7 @@ gabion dev
 4. `gabion module` commands manage modules within a project: `install` resolves the module from the vendored template or downloads it from the platform (S3 via signed URL), validates the contract dependency graph, copies files into the six connection points, updates `gabion.manifest.json`, and creates a git baseline tag. `remove` checks that no remaining module depends on the removed module's contracts. `restore` replaces modified files with the original template version. `replace` atomically swaps one module for another, validating the contract graph against the transitive state. `status` compares current files against baseline tags to show accumulated modifications.
 5. `gabion starter` manages the visual starter layer. The starter is a separate entity from modules — it provides layout, themes, CSS contract values, and UI fragments. Exactly one starter is always present; it cannot be removed, only replaced. `replace` swaps the current starter for another from the vendored template or the platform, updating templates, styles, and contract files. `package` builds a distributable starter archive from the active starter in the current project.
 6. `gabion solution` commands manage multi-module solutions: `install` reads `gabion-solution.json`, plans each module via the Installation Planner (detecting conflicts and determining keep/replace/choose actions), and installs the full set as a unit including an optional starter. `remove` reverses the installation, restoring any replaced modules and the previous starter from the vendored template. `package` and `export` build distributable archives or populate public repository directories.
-7. All development commands (`dev`, `stop`, `restart`, `instances`, `uninstance`), module commands, starter commands, and solution commands delegate to the full CLI at `~/.gabion/runtime/cli/gabion.ts`.
+7. All development commands (`dev`, `stop`, `restart`, `instances`, `uninstance`, `gateway`), module commands, starter commands, and solution commands delegate to the full CLI at `~/.gabion/runtime/cli/gabion.ts`.
 
 ## File Layout
 

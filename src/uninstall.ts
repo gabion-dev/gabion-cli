@@ -14,6 +14,7 @@
  * Never touched: per-project files under user's workspace.
  */
 
+import { spawnSync } from "child_process";
 import {
   existsSync,
   lstatSync,
@@ -21,6 +22,7 @@ import {
   readFileSync,
   rmSync,
 } from "fs";
+import { homedir } from "os";
 import { createInterface } from "readline";
 import { join } from "path";
 import { GABION_HOME, INSTANCES_JSON_PATH } from "./constants.js";
@@ -31,6 +33,96 @@ import type { RegistryInstanceEntry } from "./types.js";
  * reinstall would be a poor experience — the token outlives the runtime.
  */
 const PRESERVED_FILES: ReadonlySet<string> = new Set(["auth.json"]);
+
+/**
+ * Gateway constants, duplicated from the runtime's port-layout on
+ * purpose: the thin CLI must not depend on the artifact it removes
+ * (same reasoning as GABION_HOME living in this package's constants).
+ */
+const GATEWAY_HTTP_PORT = 8099;
+const GATEWAY_UNIT_NAME = "gabion-gateway.service";
+
+/**
+ * Bound for probing a possibly-foreign socket. This is not a readiness
+ * gate (nothing is being awaited to become ready) — it is a liveness
+ * probe of a port that may be held by an unrelated hung process, and an
+ * unbounded wait there would hang uninstall forever.
+ */
+const GATEWAY_PROBE_TIMEOUT_MS = 3_000;
+
+/**
+ * Stop a running gateway before the runtime it executes from is
+ * removed. The gateway may legitimately be alive with zero instances
+ * (machine-global, survives supervisors by design).
+ *
+ * The /health response shape is validated first so a foreign process
+ * squatting on the port is never sent a shutdown request — mirrors the
+ * validation ensure-running performs. Both loopback literals are probed:
+ * the gateway binds 127.0.0.1 and ::1.
+ */
+async function stopGatewayIfRunning(): Promise<void> {
+  for (const host of ["127.0.0.1", "[::1]"]) {
+    const base = `http://${host}:${String(GATEWAY_HTTP_PORT)}`;
+    try {
+      const healthRes = await fetch(`${base}/health`, {
+        signal: AbortSignal.timeout(GATEWAY_PROBE_TIMEOUT_MS),
+      });
+      const body: unknown = await healthRes.json();
+      const record =
+        typeof body === "object" && body !== null
+          ? (body as Record<string, unknown>)
+          : null;
+      const looksLikeGateway =
+        record !== null &&
+        record["status"] === "ready" &&
+        typeof record["version"] === "string";
+      if (!looksLikeGateway) {
+        console.warn(
+          `   ⚠️  Port ${String(GATEWAY_HTTP_PORT)} is held by a foreign process — not touching it`,
+        );
+        return;
+      }
+      await fetch(`${base}/internal/shutdown`, {
+        method: "POST",
+        signal: AbortSignal.timeout(GATEWAY_PROBE_TIMEOUT_MS),
+      });
+      console.log("   Gateway stopped");
+      return;
+    } catch {
+      // Connection refused or timed out on this literal — nothing of
+      // ours is listening there; try the next literal.
+    }
+  }
+}
+
+/**
+ * Remove the systemd user autostart unit installed by `gabion install`.
+ * systemctl failures are ignored deliberately: absence of a user
+ * systemd manager is an expected environment, not an error channel —
+ * the unit file itself is still removed if present.
+ */
+function removeGatewayAutostart(): void {
+  if (process.platform !== "linux") {
+    return;
+  }
+  // disable --now also stops a systemd-owned gateway; a detached one
+  // was already stopped via /internal/shutdown above.
+  spawnSync("systemctl", ["--user", "disable", "--now", GATEWAY_UNIT_NAME], {
+    stdio: "ignore",
+  });
+  const unitPath = join(
+    homedir(),
+    ".config",
+    "systemd",
+    "user",
+    GATEWAY_UNIT_NAME,
+  );
+  if (pathOrLinkExists(unitPath)) {
+    rmSync(unitPath, { force: true });
+    spawnSync("systemctl", ["--user", "daemon-reload"], { stdio: "ignore" });
+    console.log("   Autostart unit removed");
+  }
+}
 
 /**
  * Check whether a path exists, including broken symlinks.
@@ -170,6 +262,14 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
     }
     console.log("");
   }
+
+  // Stop the gateway and remove its autostart BEFORE deleting the
+  // runtime: the gateway process executes from the files about to be
+  // removed, and the autostart unit lives outside ~/.gabion (in
+  // ~/.config/systemd/user/), so the blanket removal below never
+  // reaches it.
+  await stopGatewayIfRunning();
+  removeGatewayAutostart();
 
   let removedCount = 0;
   for (const name of removable) {
