@@ -5,6 +5,8 @@ import { join } from "path";
 
 export const DEFAULT_API_URL = "https://api.gabion.dev";
 
+// Deliberately homedir()-anchored on every platform (no %APPDATA%/XDG
+// split) — mirrors runtime-paths.ts in the runtime; change both or neither.
 export const GABION_HOME = join(homedir(), ".gabion");
 
 export const AUTH_CONFIG_PATH = join(GABION_HOME, "auth.json");

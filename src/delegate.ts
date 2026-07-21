@@ -1,15 +1,19 @@
 // src/delegate.ts
 
 import { existsSync } from "fs";
-import { spawnSync } from "child_process";
 import { join } from "path";
 import { RUNTIME_DIR } from "./constants.js";
+import { runExternal, describeRunFailure } from "./run-external.js";
 
 /**
  * Delegate a command to the full Gabion CLI installed at ~/.gabion/runtime/.
  * Sets CWD to the runtime directory so Node resolves the tsx loader from
  * runtime/node_modules/, and passes GABION_ORIGINAL_CWD so the full CLI
  * restores the user's actual working directory.
+ *
+ * process.execPath is the real node binary — no shim mode. A spawn-level
+ * failure (which cannot come from the delegated command itself) prints
+ * its concrete reason instead of silently exiting 1.
  */
 export function delegateToFullCli(args: readonly string[]): number {
   const runtimeNodeModules = join(RUNTIME_DIR, "node_modules");
@@ -37,11 +41,15 @@ export function delegateToFullCli(args: readonly string[]): number {
     GABION_ORIGINAL_CWD: process.cwd(),
   };
 
-  const result = spawnSync(
+  const result = runExternal(
     process.execPath,
     ["--import", "tsx", cliEntry, ...args],
-    { stdio: "inherit", cwd: RUNTIME_DIR, env },
+    { cwd: RUNTIME_DIR, stdio: "inherit", env },
   );
+
+  if (result.error !== null) {
+    console.error(`gabion: ${describeRunFailure("node", result)}`);
+  }
 
   return result.status ?? 1;
 }

@@ -157,14 +157,20 @@ function removeGatewayAutostart(): void {
   }
 
   if (process.platform === "win32") {
-    spawnSync(
+    // reg delete /f exits non-zero when the value does not exist, so
+    // the exit status IS the fact "a key was actually removed" — the
+    // message is tied to it, matching the linux/darwin branches which
+    // only report when the artifact existed.
+    const res = spawnSync(
       "reg",
       ["delete", WINDOWS_RUN_KEY_PATH, "/v", WINDOWS_RUN_VALUE_NAME, "/f"],
       { stdio: "ignore" },
     );
     // The VBS launcher lives inside ~/.gabion/bin — the blanket removal
     // below deletes it with the rest of the runtime.
-    console.log("   Autostart Run key removed");
+    if (res.status === 0) {
+      console.log("   Autostart Run key removed");
+    }
   }
 }
 

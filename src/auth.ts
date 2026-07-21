@@ -7,6 +7,7 @@ import {
   removeAuthConfig,
 } from "./config.js";
 import {
+  AUTH_CONFIG_PATH,
   DEFAULT_API_URL,
   TOKEN_PREFIX,
   MIN_TOKEN_LENGTH,
@@ -54,7 +55,7 @@ export async function runAuth(args: readonly string[]): Promise<number> {
     });
 
     console.log(`Authenticated as ${result.name ?? "unknown"}.`);
-    console.log("Token saved to ~/.gabion/auth.json");
+    console.log(`Token saved to ${AUTH_CONFIG_PATH}`);
     return 0;
   } catch (err: unknown) {
     console.error(

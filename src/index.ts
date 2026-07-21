@@ -70,6 +70,15 @@ function printUsage(): void {
   console.log("  module package          Build a distributable module archive");
   console.log("  module list             List installed modules and contracts");
   console.log("");
+  console.log("Checker rules (delegated to full runtime CLI):");
+  console.log("  rules init [dir]        Create a rule bundle authoring directory");
+  console.log("  rules export <dir>      Build a distributable .gabion-rules file");
+  console.log("  rules import <file>     Install a bundle into the machine pool");
+  console.log("  rules list              List installed bundles");
+  console.log("  rules remove <id>       Remove a bundle from the machine pool");
+  console.log("  rules require <file>    Pin a bundle in the project manifest");
+  console.log("  rules unrequire <id>    Remove a bundle pin from the manifest");
+  console.log("");
   console.log("Starter management (delegated to full runtime CLI):");
   console.log("  starter replace         Replace the visual starter");
   console.log("  starter package         Build a distributable starter archive");

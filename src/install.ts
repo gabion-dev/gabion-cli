@@ -1,7 +1,6 @@
 // src/install.ts
 
 import { createHash } from "crypto";
-import { spawnSync } from "child_process";
 import {
   copyFileSync,
   cpSync,
@@ -17,6 +16,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { readAuthConfig } from "./config.js";
 import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
+import { runExternal, describeRunFailure } from "./run-external.js";
 import {
   ARCHIVE_PREFIX,
   ENGINES_DIR,
@@ -101,12 +101,19 @@ function verifySha256(filePath: string, expected: string): void {
   }
 }
 
+/**
+ * Extract the runtime archive with the system tar (present on Linux,
+ * macOS, and Windows 10+; tar is a real executable on every platform).
+ * The failure reason (spawn error, exit status, or signal) is part of
+ * the thrown message — a child's error channel never ends in a generic
+ * string.
+ */
 function extractTarGz(archivePath: string, destDir: string): void {
-  const result = spawnSync("tar", ["-xzf", archivePath, "-C", destDir], {
+  const res = runExternal("tar", ["-xzf", archivePath, "-C", destDir], {
     stdio: "inherit",
   });
-  if (result.status !== 0) {
-    throw new Error("tar extraction failed");
+  if (!res.ok) {
+    throw new Error(`tar extraction failed: ${describeRunFailure("tar", res)}`);
   }
 }
 
@@ -166,6 +173,12 @@ function copyEngineSourcesFromArchive(
  * `gabion self-update`. Downloads the archive, unpacks it, installs
  * npm dependencies, and delegates remaining build steps to the full CLI
  * via `install --post-download`.
+ *
+ * Idempotent by construction: every step derives its work from the
+ * filesystem (fresh temp dir, wipe-and-recopy of runtime/template,
+ * version-stamped engine downloads inside --post-download). A rerun
+ * after any failure redoes only real work — no step trusts a position
+ * in a previous run.
  */
 export async function downloadAndInstall(
   download: DownloadResponse,
@@ -213,14 +226,23 @@ export async function downloadAndInstall(
 
     copyFileSync(join(archiveRoot, "version.json"), VERSION_JSON_PATH);
 
+    // MIRROR NOTICE: steps 5-6 (approveRuntimeScripts + npm install +
+    // node_modules junction) also exist in the runtime's own
+    // framework/cli/commands/install.ts (repo mode, steps 4). The
+    // duplication is forced — the thin CLI cannot import a runtime it
+    // is installing. When changing this sequence, change it there too.
     logStep(5, totalSteps, "Installing runtime dependencies");
     approveRuntimeScripts(RUNTIME_DIR);
-    const npmResult = spawnSync("npm", ["install", "--omit=dev", "--no-fund", "--no-audit"], {
-      cwd: RUNTIME_DIR,
-      stdio: "inherit",
-    });
-    if (npmResult.status !== 0) {
-      return fail("npm install in runtime failed");
+    // npm is a .cmd shim on Windows — shim mode launches it via a shell.
+    const npmResult = runExternal(
+      "npm",
+      ["install", "--omit=dev", "--no-fund", "--no-audit"],
+      { cwd: RUNTIME_DIR, stdio: "inherit", windowsShim: true },
+    );
+    if (!npmResult.ok) {
+      return fail(
+        `npm install in runtime failed: ${describeRunFailure("npm", npmResult)}`,
+      );
     }
 
     logStep(6, totalSteps, "Creating workspace symlinks");
@@ -234,13 +256,16 @@ export async function downloadAndInstall(
       ...process.env as Record<string, string>,
       GABION_ORIGINAL_CWD: process.cwd(),
     };
-    const postResult = spawnSync(
+    // process.execPath is the real node binary — no shim mode.
+    const postResult = runExternal(
       process.execPath,
       ["--import", "tsx", cliEntry, "install", "--post-download"],
-      { stdio: "inherit", cwd: RUNTIME_DIR, env },
+      { cwd: RUNTIME_DIR, stdio: "inherit", env },
     );
-    if (postResult.status !== 0) {
-      return fail("post-download finalization failed");
+    if (!postResult.ok) {
+      return fail(
+        `post-download finalization failed: ${describeRunFailure("node", postResult)}`,
+      );
     }
 
     logStep(8, totalSteps, "Done");
