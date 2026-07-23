@@ -47,6 +47,17 @@ export type CommandHandler = (args: readonly string[]) => Promise<number>;
 // External command runner (run-external.ts)
 // ==========================================
 
+/**
+ * Platform-resolved command vector, ready to spawn WITHOUT the shell
+ * option. On Windows a .cmd/.bat shim resolves to an explicit
+ * `cmd.exe /c <shim> <args...>` vector; on POSIX the input passes
+ * through unchanged. Produced only by resolveWindowsShim.
+ */
+export interface ResolvedCommand {
+  readonly command: string;
+  readonly args: readonly string[];
+}
+
 /** Options for running a one-shot external command. */
 export interface RunExternalOptions {
   /** Working directory for the child process. */
@@ -60,9 +71,10 @@ export interface RunExternalOptions {
   readonly stdio: "inherit" | "capture";
   /**
    * True when the command is installed as a .cmd/.bat shim on Windows
-   * (npm). Such shims need a shell to launch; real executables (node,
-   * java, git, tar) must not get one — with a shell Node does not quote
-   * arguments, so paths containing spaces break.
+   * (npm). Shims cannot be spawned directly (Node >= 20 returns EINVAL)
+   * and are resolved through resolveWindowsShim into an explicit
+   * `cmd.exe /c` argument vector. Real executables (node, java, git,
+   * tar) must not set this — they spawn directly on every platform.
    */
   readonly windowsShim?: boolean;
 }

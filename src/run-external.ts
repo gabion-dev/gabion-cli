@@ -1,6 +1,7 @@
 // src/run-external.ts
 /**
- * Single owner of one-shot external command execution for the thin CLI.
+ * Single owner of one-shot external command execution for the thin CLI,
+ * and of the Windows shim launch strategy (resolveWindowsShim).
  *
  * MIRROR NOTICE: this file deliberately duplicates
  * framework/shared/run-external.ts in the runtime repository. The
@@ -10,18 +11,24 @@
  *
  * Why this exists: on Windows, npm installs as a .cmd shim, and
  * Node >= 20 refuses to spawn those without a shell — spawn returns
- * EINVAL before the process starts. A shell resolves the shim via
- * PATHEXT. On POSIX the same commands are real executables and no
- * shell is involved. Callers declare shim-ness explicitly (windowsShim)
- * instead of a blanket per-platform shell: with a shell active, Node
- * does NOT quote arguments, so paths with spaces would silently break
- * for real executables that never needed a shell in the first place.
+ * EINVAL before the process starts. On POSIX the same commands are real
+ * executables and spawn directly. Callers declare shim-ness explicitly
+ * (windowsShim) instead of a blanket per-platform policy.
  *
- * Shell mode is only legal for fixed argument lists without user input.
- * assertShellSafe enforces this loudly: if a shim ever needs arguments
- * containing whitespace or shell metacharacters, the correct move is to
- * resolve the shim's full path via `where` and spawn it without a shell
- * — not to weaken the assertion.
+ * Shim launch strategy: a shim is launched through an EXPLICIT
+ * `cmd.exe /c <shim> <args...>` argument vector, never through the
+ * `shell: true` spawn option. With `shell: true` Node concatenates
+ * arguments into a single line without escaping them (deprecated as
+ * DEP0190 for exactly that reason), leaving quoting at the mercy of
+ * cmd.exe line parsing. With the explicit vector every argument stays
+ * a separate array element and Node performs its own quoting.
+ *
+ * cmd.exe still parses the line after /c, so shim mode remains legal
+ * only for fixed argument lists without user input. assertShellSafe
+ * enforces this loudly inside the resolver: if a shim ever needs
+ * arguments containing whitespace or cmd metacharacters, the correct
+ * move is to resolve the shim's full path (e.g. via `where`) and hand
+ * it to a dedicated launcher — not to weaken the assertion.
  *
  * Error channel rule: a child's failure reason must reach the user.
  * describeRunFailure turns a result into a concrete reason (spawn error
@@ -30,14 +37,18 @@
  */
 
 import { spawnSync } from "child_process";
-import type { RunExternalOptions, RunExternalResult } from "./types.js";
+import type {
+  ResolvedCommand,
+  RunExternalOptions,
+  RunExternalResult,
+} from "./types.js";
 
 const IS_WINDOWS = process.platform === "win32";
 
 /**
- * Characters that would require shell quoting (whitespace, cmd.exe
- * metacharacters and expansion triggers). Their presence in shell mode
- * is a programming error, not a runtime condition.
+ * Characters that cmd.exe would interpret on the line after /c
+ * (whitespace, metacharacters, expansion triggers). Their presence in
+ * shim mode is a programming error, not a runtime condition.
  */
 const SHELL_UNSAFE_PATTERN = /[\s"'&|<>^%!()]/;
 
@@ -45,12 +56,31 @@ function assertShellSafe(command: string, args: readonly string[]): void {
   for (const token of [command, ...args]) {
     if (SHELL_UNSAFE_PATTERN.test(token)) {
       throw new Error(
-        `runExternal: shim mode cannot pass "${token}" — it contains ` +
-          "characters that need shell quoting. Resolve the shim's full " +
-          "path (e.g. via `where`) and spawn it without a shell instead.",
+        `resolveWindowsShim: shim mode cannot pass "${token}" — it ` +
+          "contains characters that cmd.exe would interpret. Resolve the " +
+          "shim's full path (e.g. via `where`) and spawn it without a " +
+          "shell instead.",
       );
     }
   }
+}
+
+/**
+ * Resolve a command that is a .cmd/.bat shim on Windows into a spawnable
+ * command vector. On POSIX the vector passes through unchanged. This is
+ * the single place in the thin CLI that knows about `cmd.exe /c`; every
+ * spawner of a shim (sync or async) must go through it instead of
+ * setting `shell: true` or hand-building the cmd invocation.
+ */
+export function resolveWindowsShim(
+  command: string,
+  args: readonly string[],
+): ResolvedCommand {
+  if (!IS_WINDOWS) {
+    return { command, args: [...args] };
+  }
+  assertShellSafe(command, args);
+  return { command: "cmd.exe", args: ["/c", command, ...args] };
 }
 
 /** Run a one-shot external command synchronously. */
@@ -59,15 +89,13 @@ export function runExternal(
   args: readonly string[],
   options: RunExternalOptions,
 ): RunExternalResult {
-  const useShell = IS_WINDOWS && (options.windowsShim ?? false);
-  if (useShell) {
-    assertShellSafe(command, args);
-  }
+  const resolved: ResolvedCommand = (options.windowsShim ?? false)
+    ? resolveWindowsShim(command, args)
+    : { command, args: [...args] };
 
-  const res = spawnSync(command, [...args], {
+  const res = spawnSync(resolved.command, [...resolved.args], {
     cwd: options.cwd,
     env: options.env,
-    shell: useShell,
     encoding: "utf-8",
     stdio: options.stdio === "inherit" ? "inherit" : ["ignore", "pipe", "pipe"],
   });
