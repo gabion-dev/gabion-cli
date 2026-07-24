@@ -57,9 +57,20 @@ export async function runDoctor(args: readonly string[]): Promise<number> {
   if (npmLine !== null) {
     console.log(`✅ npm: ${npmLine}`);
   } else {
-    console.log(
-      "❌ npm: not found — install Node.js (which provides npm) and restart the terminal",
-    );
+    // On Windows the most common cause is not a missing npm but
+    // PowerShell ExecutionPolicy blocking the npm.ps1 shim. The policy
+    // never applies to .cmd shims, so routing through cmd.exe is a fix
+    // an agent can execute without changing any machine setting;
+    // Set-ExecutionPolicy is the human-side alternative.
+    const npmHint =
+      process.platform === "win32"
+        ? "not found or blocked. If PowerShell reports 'running scripts is " +
+          "disabled', invoke npm through cmd.exe (cmd /c npm ...) — " +
+          "ExecutionPolicy does not apply to .cmd shims. Alternatively a " +
+          "human can run: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser. " +
+          "If npm is genuinely absent, install Node.js and restart the terminal"
+        : "not found — install Node.js (which provides npm) and restart the terminal";
+    console.log(`❌ npm: ${npmHint}`);
     failures++;
   }
 
