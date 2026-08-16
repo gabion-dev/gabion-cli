@@ -89,6 +89,10 @@ function printUsage(): void {
   console.log("  solution package        Build a distributable solution archive");
   console.log("  solution export         Export solution files for a public repository");
   console.log("  solution list           List installed solutions");
+  console.log("");
+  console.log("Documentation layer (delegated to full runtime CLI):");
+  console.log("  context init            Create the documentation layer (ai-context/, work-context/)");
+  console.log("  context check           Verify documentation structural integrity");
 }
 
 async function main(): Promise<void> {
