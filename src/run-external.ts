@@ -7,7 +7,8 @@
  * framework/shared/run-external.ts in the runtime repository. The
  * duplication is forced: the thin CLI's job is to install the runtime,
  * so it cannot import from a runtime that may not exist yet. When
- * changing the spawn policy here, change it there — and vice versa.
+ * changing the spawn or signal policy here, change it there — and vice
+ * versa.
  *
  * Why this exists: on Windows, npm installs as a .cmd shim, and
  * Node >= 20 refuses to spawn those without a shell — spawn returns
@@ -29,6 +30,12 @@
  * arguments containing whitespace or cmd metacharacters, the correct
  * move is to resolve the shim's full path (e.g. via `where`) and hand
  * it to a dedicated launcher — not to weaken the assertion.
+ *
+ * Signal rule: a child launched with inherited stdio shares the terminal's
+ * foreground process group and receives the keyboard interrupt itself;
+ * for its lifetime this process ignores SIGINT/SIGTERM and only relays
+ * the child's outcome — a wrapper that dies first hands the prompt back
+ * while the child is still shutting down (see runExternal).
  *
  * Error channel rule: a child's failure reason must reach the user.
  * describeRunFailure turns a result into a concrete reason (spawn error
@@ -93,21 +100,47 @@ export function runExternal(
     ? resolveWindowsShim(command, args)
     : { command, args: [...args] };
 
-  const res = spawnSync(resolved.command, [...resolved.args], {
-    cwd: options.cwd,
-    env: options.env,
-    encoding: "utf-8",
-    stdio: options.stdio === "inherit" ? "inherit" : ["ignore", "pipe", "pipe"],
-  });
-
-  return {
-    ok: res.error === undefined && res.status === 0,
-    status: res.status,
-    signal: res.signal,
-    error: res.error ?? null,
-    stdout: typeof res.stdout === "string" ? res.stdout : "",
-    stderr: typeof res.stderr === "string" ? res.stderr : "",
+  // A child with inherited stdio sits in the terminal's foreground process
+  // group, so an interrupt from the keyboard reaches it directly and the
+  // child decides what the interrupt means (a dev session shuts down in
+  // order, a package manager stops). This wrapper has no decision to make
+  // and only one job: outlive the child and relay its outcome. Without a
+  // listener Node's default disposition kills the wrapper on the spot,
+  // the shell sees its direct child exit and prints the prompt while the
+  // child is still shutting down and writing to the terminal. The
+  // listeners are deliberately no-ops and live exactly as long as the
+  // child; captured-stdio probes keep the default disposition.
+  const transparent = options.stdio === "inherit";
+  const ignoreSignal = (): void => {
+    // Deliberately no-op: the foreground child owns the interrupt.
   };
+  if (transparent) {
+    process.on("SIGINT", ignoreSignal);
+    process.on("SIGTERM", ignoreSignal);
+  }
+
+  try {
+    const res = spawnSync(resolved.command, [...resolved.args], {
+      cwd: options.cwd,
+      env: options.env,
+      encoding: "utf-8",
+      stdio: transparent ? "inherit" : ["ignore", "pipe", "pipe"],
+    });
+
+    return {
+      ok: res.error === undefined && res.status === 0,
+      status: res.status,
+      signal: res.signal,
+      error: res.error ?? null,
+      stdout: typeof res.stdout === "string" ? res.stdout : "",
+      stderr: typeof res.stderr === "string" ? res.stderr : "",
+    };
+  } finally {
+    if (transparent) {
+      process.off("SIGINT", ignoreSignal);
+      process.off("SIGTERM", ignoreSignal);
+    }
+  }
 }
 
 /**

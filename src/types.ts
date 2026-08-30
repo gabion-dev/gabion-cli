@@ -65,8 +65,10 @@ export interface RunExternalOptions {
   /** Environment for the child; defaults to the parent environment. */
   readonly env?: Record<string, string>;
   /**
-   * "inherit" streams the child's output to the parent terminal;
-   * "capture" collects stdout/stderr into the result (probes).
+   * "inherit" streams the child's output to the parent terminal and makes
+   * the parent transparent to terminal interrupts for the child's lifetime
+   * — the child, sitting in the same foreground process group, owns the
+   * interrupt; "capture" collects stdout/stderr into the result (probes).
    */
   readonly stdio: "inherit" | "capture";
   /**
