@@ -47,6 +47,7 @@ gabion dev
 |           Command         |                     Description                    |
 |---------------------------|----------------------------------------------------|
 | `gabion dev`              | Start the development instance                     |
+| `gabion check`            | Gate before a production build (see below)         |
 | `gabion init <name>`      | Create a new project                               |
 | `gabion stop`             | Stop the running instance                          |
 | `gabion restart`          | Restart the current instance                       |
@@ -55,6 +56,14 @@ gabion dev
 | `gabion gateway status`   | Show gateway health, name resolution and instances |
 | `gabion gateway start`    | Start the machine-global gateway                   |
 | `gabion gateway stop`     | Stop the machine-global gateway                    |
+
+`gabion check` asks the running development instance whether its verdict
+covers the current state of the tree and whether anything blocks. It never
+re-computes a verdict — the checker network lives on the instance. Exit
+codes: `0` — clean, `1` — blocking findings exist, `2` — the check could
+not be performed (no project, no running instance, a confirmed hole in the
+checker network, or checks still running). A project's `make build` runs
+it before packaging the production JAR.
 
 ### Module Management (delegated to full runtime CLI)
 

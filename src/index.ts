@@ -51,6 +51,9 @@ function printUsage(): void {
   console.log("");
   console.log("Development (delegated to full runtime CLI):");
   console.log("  dev              Start the development instance");
+  console.log("  check            Ask the running stand whether its verdict covers the tree");
+  console.log("                   and nothing blocks (exit 0 clean, 1 blocking findings,");
+  console.log("                   2 the check could not be performed)");
   console.log("  init <name>      Create a new project");
   console.log("  stop             Stop the running instance");
   console.log("  restart          Restart the current instance");
