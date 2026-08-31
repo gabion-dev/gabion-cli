@@ -1,6 +1,14 @@
 // src/config.ts
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { dirname } from "path";
 import {
   AUTH_CONFIG_PATH,
@@ -54,6 +62,13 @@ export function writeAuthConfig(config: AuthConfig): void {
 export function removeAuthConfig(): void {
   if (existsSync(AUTH_CONFIG_PATH)) {
     rmSync(AUTH_CONFIG_PATH);
+  }
+  // After uninstall the home directory survives only for auth.json;
+  // revoking the token may leave it empty, and an empty ~/.gabion is a
+  // contentless trace. rmdirSync refuses non-empty directories by
+  // contract, so an installed runtime is never touched here.
+  if (existsSync(GABION_HOME) && readdirSync(GABION_HOME).length === 0) {
+    rmdirSync(GABION_HOME);
   }
 }
 

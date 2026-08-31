@@ -8,7 +8,9 @@
  *
  * Strategy: remove everything inside ~/.gabion/ EXCEPT auth.json.
  * This is more robust than maintaining a whitelist of paths — any future
- * artifacts (caches, logs, stamps) are cleaned automatically.
+ * artifacts (caches, logs, stamps) are cleaned automatically. When
+ * nothing survives (no auth.json), the home directory itself is removed
+ * too — an empty ~/.gabion would be the last trace of the installation.
  *
  * Preserved: auth.json (use `gabion auth --revoke` to remove separately).
  * Never touched: per-project files under user's workspace.
@@ -70,7 +72,8 @@ const GATEWAY_PROBE_TIMEOUT_MS = 3_000;
  * The /health response shape is validated first so a foreign process
  * squatting on the port is never sent a shutdown request — mirrors the
  * validation ensure-running performs. Both loopback literals are probed:
- * the gateway binds 127.0.0.1 and ::1.
+ * the gateway binds 127.0.0.1 and ::1, and a foreign process holding
+ * one literal says nothing about the other — the probe moves on to it.
  */
 async function stopGatewayIfRunning(): Promise<void> {
   for (const host of ["127.0.0.1", "[::1]"]) {
@@ -90,9 +93,9 @@ async function stopGatewayIfRunning(): Promise<void> {
         typeof record["version"] === "string";
       if (!looksLikeGateway) {
         console.warn(
-          `   ⚠️  Port ${String(GATEWAY_HTTP_PORT)} is held by a foreign process — not touching it`,
+          `   ⚠️  ${host}:${String(GATEWAY_HTTP_PORT)} is held by a foreign process — not touching it`,
         );
-        return;
+        continue;
       }
       await fetch(`${base}/internal/shutdown`, {
         method: "POST",
@@ -315,9 +318,12 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
         `  • ${instance.name} (PID ${String(instance.supervisorPid)})`,
       );
     }
+    // `gabion stop` addresses the instance of the CURRENT project only;
+    // instances listed above may live in other directories. `uninstance`
+    // addresses each by the name just printed, from anywhere.
     console.error(
-      "\n  Stop all instances first:\n\n" +
-        "       gabion stop\n\n" +
+      "\n  Stop each one by its listed name:\n\n" +
+        "       gabion uninstance <name>\n\n" +
         "  Then re-run:\n\n" +
         "       gabion uninstall\n",
     );
@@ -326,7 +332,9 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
 
   if (!force) {
     console.log(
-      "This will remove the Gabion runtime, engines, and bin shim from ~/.gabion/.\n" +
+      "This will remove everything under ~/.gabion/: the runtime, engines,\n" +
+        "project template, bin shim, machine settings, and the machine pool\n" +
+        "of checker rule bundles.\n" +
         "Your authentication token and project files are not affected.\n",
     );
 
@@ -356,10 +364,23 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
     }
   }
 
+  // The home directory stays only while it still holds something (the
+  // preserved auth.json). Empty, it would be a contentless trace — the
+  // machine returns to its pre-install state instead.
+  const leftover = readdirSync(GABION_HOME);
+  if (leftover.length === 0) {
+    rmSync(GABION_HOME, { recursive: true, force: true });
+  }
+
   console.log(`✅ Gabion uninstalled (${String(removedCount)} items removed)`);
   console.log("   To re-install: gabion install");
-  console.log("   To remove auth token: gabion auth --revoke");
+  if (leftover.some((name) => PRESERVED_FILES.has(name))) {
+    console.log("   To remove auth token: gabion auth --revoke");
+  }
   console.log("   To remove the CLI itself: npm uninstall -g gabion");
+  console.log(
+    `   If your shell profile adds ${join(GABION_HOME, "bin")} to PATH, drop that entry`,
+  );
 
   return 0;
 }
