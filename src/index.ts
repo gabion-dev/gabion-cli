@@ -28,13 +28,28 @@ function printVersion(): void {
   const pkgPath = join(dirname(__filename), "..", "package.json");
   const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
 
+  console.log(`gabion ${pkg.version} (${describeInstalledRuntime()})`);
+}
+
+/**
+ * The installed runtime's version as the version line shows it. The
+ * file is written by `gabion install`; a damaged one is named rather
+ * than crashing the version line or printing "undefined".
+ */
+function describeInstalledRuntime(): string {
   const versionPath = join(homedir(), ".gabion", "version.json");
-  if (existsSync(versionPath)) {
-    const runtime = JSON.parse(readFileSync(versionPath, "utf-8")) as { version: string };
-    console.log(`gabion ${pkg.version} (runtime ${runtime.version})`);
-  } else {
-    console.log(`gabion ${pkg.version} (runtime not installed)`);
+  if (!existsSync(versionPath)) return "runtime not installed";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(versionPath, "utf-8"));
+  } catch {
+    return `runtime version unknown: ${versionPath} is not valid JSON`;
   }
+  if (typeof parsed === "object" && parsed !== null && "version" in parsed) {
+    const { version } = parsed;
+    if (typeof version === "string" && version !== "") return `runtime ${version}`;
+  }
+  return `runtime version unknown: ${versionPath} has no "version"`;
 }
 
 function printUsage(): void {

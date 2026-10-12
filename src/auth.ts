@@ -44,7 +44,7 @@ export async function runAuth(args: readonly string[]): Promise<number> {
   try {
     const result = await verifyToken(token);
     if (!result.valid) {
-      console.error(`Token rejected: ${result.reason ?? "unknown reason"}`);
+      console.error(`Token rejected: ${result.reason}`);
       return 1;
     }
 

@@ -6,29 +6,25 @@ export interface AuthConfig {
   readonly lastVerifiedAt: string | null;
 }
 
-export interface VerifyResponse {
-  readonly valid: boolean;
-  readonly name?: string;
-  readonly permissions?: readonly string[];
-  readonly reason?: string;
-}
+/** Answer of /api/auth/verify: the token's holder, or why it was refused. */
+export type VerifyResponse =
+  | { readonly valid: true; readonly name?: string }
+  | { readonly valid: false; readonly reason: string };
 
+/** Answer of /api/runtime/download when a newer runtime exists. */
 export interface DownloadResponse {
   readonly version: string;
   readonly url: string;
   readonly sha256: string;
 }
 
+/** Answer of /api/runtime/download when the current version is the latest. */
 export interface UpToDateResponse {
   readonly upToDate: true;
+  readonly version: string;
 }
 
 export type RuntimeDownloadResult = DownloadResponse | UpToDateResponse;
-
-export interface LatestResponse {
-  readonly version: string;
-  readonly minNodeVersion?: string;
-}
 
 export interface VersionInfo {
   readonly version: string;

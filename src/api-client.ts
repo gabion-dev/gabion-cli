@@ -3,29 +3,32 @@
 import type {
   VerifyResponse,
   RuntimeDownloadResult,
-  LatestResponse,
 } from "./types.js";
 import { DEFAULT_API_URL } from "./constants.js";
 
 /**
- * Structured error from API calls. Carries the HTTP status and,
- * when the server returned a JSON body with a "reason" field,
- * the machine-readable reason string (e.g. "revoked", "expired",
- * "not_found").
+ * Structured error from API calls. Carries the HTTP status and, when
+ * the server returned a JSON body, its machine-readable fields: "reason"
+ * names a token refusal ("revoked", "expired", "not_found"), "error" a
+ * failure of the request itself ("no_versions_published"). Either is
+ * empty when the body does not carry it.
  */
 export class ApiError extends Error {
   readonly status: number;
   readonly reason: string;
+  readonly error: string;
 
-  constructor(status: number, reason: string) {
+  constructor(status: number, reason: string, error: string) {
+    const code = reason !== "" ? reason : error;
     const msg =
-      reason !== ""
-        ? `${reason} (HTTP ${String(status)})`
+      code !== ""
+        ? `${code} (HTTP ${String(status)})`
         : `HTTP ${String(status)}`;
     super(msg);
     this.name = "ApiError";
     this.status = status;
     this.reason = reason;
+    this.error = error;
   }
 }
 
@@ -58,7 +61,78 @@ export function formatTokenError(error: ApiError): string {
   return `API request failed (HTTP ${String(error.status)})`;
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
+// ==========================================
+// Response shape checks
+// ==========================================
+//
+// Every answer of the service is checked before it is acted on: the
+// service is deployed apart from this CLI, and an answer cast to its
+// type unchecked surfaces as a crash or a misleading message far from
+// its cause — an invalid URL, a checksum compared against "undefined".
+// A field this CLI does not know is passed over; a missing or malformed
+// one is refused with its name. Checked by hand, because the thin CLI
+// carries no runtime dependency.
+
+/** SHA-256 as the archive's checksum file carries it: 64 lowercase hex digits. */
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
+
+/** An answer of the service that is not the shape its endpoint promises. */
+export class ResponseShapeError extends Error {
+  constructor(url: string, problem: string) {
+    super(`Unexpected response from ${url}: ${problem}`);
+    this.name = "ResponseShapeError";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireString(
+  url: string,
+  body: Record<string, unknown>,
+  field: string,
+): string {
+  const value = body[field];
+  if (typeof value !== "string" || value === "") {
+    throw new ResponseShapeError(url, `"${field}" is not a non-empty string`);
+  }
+  return value;
+}
+
+function readVerifyResponse(url: string, body: unknown): VerifyResponse {
+  if (!isRecord(body)) throw new ResponseShapeError(url, "not a JSON object");
+  if (body["valid"] === true) {
+    const name = body["name"];
+    if (name !== undefined && typeof name !== "string") {
+      throw new ResponseShapeError(url, `"name" is not a string`);
+    }
+    return name === undefined ? { valid: true } : { valid: true, name };
+  }
+  if (body["valid"] === false) {
+    return { valid: false, reason: requireString(url, body, "reason") };
+  }
+  throw new ResponseShapeError(url, `"valid" is not a boolean`);
+}
+
+function readRuntimeDownloadResult(url: string, body: unknown): RuntimeDownloadResult {
+  if (!isRecord(body)) throw new ResponseShapeError(url, "not a JSON object");
+  const version = requireString(url, body, "version");
+  if (body["upToDate"] === true) {
+    return { upToDate: true, version };
+  }
+  const sha256 = requireString(url, body, "sha256");
+  if (!SHA256_HEX_PATTERN.test(sha256)) {
+    throw new ResponseShapeError(url, `"sha256" is not 64 lowercase hex digits`);
+  }
+  return { version, url: requireString(url, body, "url"), sha256 };
+}
+
+async function postJson<T>(
+  url: string,
+  body: unknown,
+  readAnswer: (url: string, answer: unknown) => T,
+): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -66,17 +140,26 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   });
   if (!response.ok) {
     let reason = "";
+    let error = "";
     try {
-      const errorBody = (await response.json()) as Record<string, unknown>;
-      if (typeof errorBody["reason"] === "string") {
-        reason = errorBody["reason"];
+      const errorBody: unknown = await response.json();
+      if (isRecord(errorBody)) {
+        if (typeof errorBody["reason"] === "string") reason = errorBody["reason"];
+        if (typeof errorBody["error"] === "string") error = errorBody["error"];
       }
     } catch {
-      // Response body is not parseable JSON — reason stays empty
+      // A refusal that is not JSON (a gateway's own error page) carries
+      // nothing beyond its status — the status is the whole message.
     }
-    throw new ApiError(response.status, reason);
+    throw new ApiError(response.status, reason, error);
   }
-  return (await response.json()) as T;
+  let answer: unknown;
+  try {
+    answer = await response.json();
+  } catch {
+    throw new ResponseShapeError(url, "not JSON");
+  }
+  return readAnswer(url, answer);
 }
 
 export async function verifyToken(
@@ -84,7 +167,7 @@ export async function verifyToken(
   baseUrl?: string,
 ): Promise<VerifyResponse> {
   const url = `${baseUrl ?? DEFAULT_API_URL}/api/auth/verify`;
-  return postJson<VerifyResponse>(url, { token });
+  return postJson(url, { token }, readVerifyResponse);
 }
 
 export async function requestRuntimeDownload(
@@ -93,16 +176,5 @@ export async function requestRuntimeDownload(
   baseUrl?: string,
 ): Promise<RuntimeDownloadResult> {
   const url = `${baseUrl ?? DEFAULT_API_URL}/api/runtime/download`;
-  return postJson<RuntimeDownloadResult>(url, { token, currentVersion });
-}
-
-export async function fetchLatestVersion(
-  baseUrl?: string,
-): Promise<LatestResponse> {
-  const url = `${baseUrl ?? DEFAULT_API_URL}/api/runtime/latest`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new ApiError(response.status, "");
-  }
-  return (await response.json()) as LatestResponse;
+  return postJson(url, { token, currentVersion }, readRuntimeDownloadResult);
 }
