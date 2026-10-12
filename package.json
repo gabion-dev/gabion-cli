@@ -4,7 +4,7 @@
   "description": "Gabion development framework — thin CLI for authenticated runtime distribution",
   "type": "module",
   "bin": {
-    "gabion": "./dist/index.js"
+    "gabion": "dist/index.js"
   },
   "files": [
     "dist",
