@@ -69,6 +69,9 @@ function printUsage(): void {
   console.log("  check            Ask the running stand whether its verdict covers the tree");
   console.log("                   and nothing blocks (exit 0 clean, 1 blocking findings,");
   console.log("                   2 the check could not be performed)");
+  console.log("  verify-jar       Start the built JAR as a server would: production profile,");
+  console.log("                   empty directory, throwaway database (exit 0 healthy,");
+  console.log("                   1 the JAR refused to start, 2 the check could not be performed)");
   console.log("  init <name>      Create a new project");
   console.log("  stop             Stop the running instance");
   console.log("  restart          Restart the current instance");
