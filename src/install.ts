@@ -1,6 +1,5 @@
 // src/install.ts
 
-import { createHash } from "crypto";
 import {
   copyFileSync,
   cpSync,
@@ -17,8 +16,11 @@ import { tmpdir } from "os";
 import { readAuthConfig } from "./config.js";
 import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
 import { runExternal, describeRunFailure } from "./run-external.js";
+import { downloadFile, verifySha256, extractTarGz } from "./archive-fetch.js";
+import { ensurePinnedNode } from "./pinned-node.js";
 import {
   ARCHIVE_PREFIX,
+  CLI_ENTRY,
   ENGINES_DIR,
   GABION_HOME,
   GRADLE_SOURCE_ENGINES,
@@ -44,77 +46,18 @@ function isDownloadResponse(
   return "url" in result;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  const mb = kb / 1024;
-  return `${mb.toFixed(1)} MB`;
-}
-
-async function downloadFile(url: string, destPath: string): Promise<void> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Download failed: HTTP ${String(response.status)}`);
+/** The "node" release named by an archive's version.json, or null when absent. */
+function readPinnedNodeVersion(versionJsonPath: string): string | null {
+  if (!existsSync(versionJsonPath)) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(versionJsonPath, "utf-8"));
+  } catch {
+    return null;
   }
-
-  const totalStr = response.headers.get("content-length");
-  const totalBytes = totalStr !== null ? parseInt(totalStr, 10) : 0;
-  const reader = response.body?.getReader();
-  if (reader === undefined) {
-    throw new Error("No response body");
-  }
-
-  const chunks: Uint8Array[] = [];
-  let receivedBytes = 0;
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    receivedBytes += value.length;
-
-    if (totalBytes > 0) {
-      const pct = Math.round((receivedBytes / totalBytes) * 100);
-      process.stdout.write(
-        `\r\x1B[K   Downloading... ${String(pct)}% (${formatBytes(receivedBytes)} / ${formatBytes(totalBytes)})`,
-      );
-    } else {
-      process.stdout.write(
-        `\r\x1B[K   Downloading... ${formatBytes(receivedBytes)}`,
-      );
-    }
-  }
-  process.stdout.write("\n");
-
-  writeFileSync(destPath, Buffer.concat(chunks));
-}
-
-function verifySha256(filePath: string, expected: string): void {
-  const hash = createHash("sha256");
-  hash.update(readFileSync(filePath));
-  const actual = hash.digest("hex");
-  if (actual !== expected) {
-    throw new Error(
-      `SHA-256 mismatch: expected ${expected}, got ${actual}`,
-    );
-  }
-}
-
-/**
- * Extract the runtime archive with the system tar (present on Linux,
- * macOS, and Windows 10+; tar is a real executable on every platform).
- * The failure reason (spawn error, exit status, or signal) is part of
- * the thrown message — a child's error channel never ends in a generic
- * string.
- */
-function extractTarGz(archivePath: string, destDir: string): void {
-  const res = runExternal("tar", ["-xzf", archivePath, "-C", destDir], {
-    stdio: "inherit",
-  });
-  if (!res.ok) {
-    throw new Error(`tar extraction failed: ${describeRunFailure("tar", res)}`);
-  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const node = (parsed as Record<string, unknown>)["node"];
+  return typeof node === "string" && node !== "" ? node : null;
 }
 
 /**
@@ -183,7 +126,7 @@ function copyEngineSourcesFromArchive(
 export async function downloadAndInstall(
   download: DownloadResponse,
 ): Promise<number> {
-  const totalSteps = 8;
+  const totalSteps = 9;
   const { version, url, sha256 } = download;
 
   logStep(1, totalSteps, `Downloading runtime v${version}`);
@@ -206,7 +149,20 @@ export async function downloadAndInstall(
       return fail("archive missing runtime/ directory");
     }
 
-    logStep(4, totalSteps, "Installing runtime files");
+    // The archive names the Node release its bytecode was compiled for;
+    // an archive without it is from before closed builds and cannot be
+    // run by this CLI at all.
+    const pinnedNodeVersion = readPinnedNodeVersion(join(archiveRoot, "version.json"));
+    if (pinnedNodeVersion === null) {
+      return fail(
+        'archive version.json names no "node" release — this runtime archive predates closed builds',
+      );
+    }
+
+    logStep(4, totalSteps, "Installing the pinned Node");
+    const pinnedNode = await ensurePinnedNode(pinnedNodeVersion);
+
+    logStep(5, totalSteps, "Installing runtime files");
     mkdirSync(GABION_HOME, { recursive: true });
 
     if (existsSync(RUNTIME_DIR)) {
@@ -216,12 +172,21 @@ export async function downloadAndInstall(
 
     copyEngineSourcesFromArchive(join(archiveRoot, ".engines"), ENGINES_DIR);
 
+    // The template keeps its file timestamps: it carries generated types
+    // and the API specification they came from, and the runtime decides
+    // on first run whether they are current by comparing modification
+    // times. tar restored the archive's times; a copy stamped with the
+    // time of copying would make every new project regenerate types it
+    // already has.
     const archiveTemplate = join(archiveRoot, "template");
     if (existsSync(archiveTemplate)) {
       if (existsSync(TEMPLATE_DIR)) {
         rmSync(TEMPLATE_DIR, { recursive: true, force: true });
       }
-      cpSync(archiveTemplate, TEMPLATE_DIR, { recursive: true });
+      cpSync(archiveTemplate, TEMPLATE_DIR, {
+        recursive: true,
+        preserveTimestamps: true,
+      });
     }
 
     copyFileSync(join(archiveRoot, "version.json"), VERSION_JSON_PATH);
@@ -231,7 +196,7 @@ export async function downloadAndInstall(
     // framework/cli/commands/install.ts (repo mode, steps 4). The
     // duplication is forced — the thin CLI cannot import a runtime it
     // is installing. When changing this sequence, change it there too.
-    logStep(5, totalSteps, "Installing runtime dependencies");
+    logStep(6, totalSteps, "Installing runtime dependencies");
     approveRuntimeScripts(RUNTIME_DIR);
     // npm is a .cmd shim on Windows — shim mode launches it via a shell.
     const npmResult = runExternal(
@@ -245,21 +210,21 @@ export async function downloadAndInstall(
       );
     }
 
-    logStep(6, totalSteps, "Creating workspace symlinks");
+    logStep(7, totalSteps, "Creating workspace symlinks");
     const topNodeModules = join(GABION_HOME, "node_modules");
     rmSync(topNodeModules, { recursive: true, force: true });
     symlinkSync(join(RUNTIME_DIR, "node_modules"), topNodeModules, "junction");
 
-    logStep(7, totalSteps, "Finalizing installation");
-    const cliEntry = join(RUNTIME_DIR, "cli", "gabion.ts");
+    logStep(8, totalSteps, "Finalizing installation");
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
       GABION_ORIGINAL_CWD: process.cwd(),
     };
-    // process.execPath is the real node binary — no shim mode.
+    // The runtime runs on its pinned Node, as bytecode behind the CLI
+    // entry's loader — the same launch the delegation uses.
     const postResult = runExternal(
-      process.execPath,
-      ["--import", "tsx", cliEntry, "install", "--post-download"],
+      pinnedNode,
+      [CLI_ENTRY, "install", "--post-download"],
       { cwd: RUNTIME_DIR, stdio: "inherit", env },
     );
     if (!postResult.ok) {
@@ -268,7 +233,7 @@ export async function downloadAndInstall(
       );
     }
 
-    logStep(8, totalSteps, "Done");
+    logStep(9, totalSteps, "Done");
     return 0;
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

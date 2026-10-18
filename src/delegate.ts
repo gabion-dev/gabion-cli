@@ -2,18 +2,21 @@
 
 import { existsSync } from "fs";
 import { join } from "path";
-import { RUNTIME_DIR } from "./constants.js";
+import { CLI_ENTRY, RUNTIME_DIR } from "./constants.js";
+import { PINNED_NODE_BINARY } from "./pinned-node.js";
 import { runExternal, describeRunFailure } from "./run-external.js";
 
 /**
- * Delegate a command to the full Gabion CLI installed at ~/.gabion/runtime/.
- * Sets CWD to the runtime directory so Node resolves the tsx loader from
- * runtime/node_modules/, and passes GABION_ORIGINAL_CWD so the full CLI
- * restores the user's actual working directory.
+ * Delegate a command to the full Gabion CLI installed at ~/.gabion/runtime/:
+ * its bytecode behind the CLI entry's loader, run on the pinned Node the
+ * installation downloaded — never on the Node this thin CLI runs on,
+ * which may be any release. Sets CWD to the runtime directory so the
+ * loader resolves bytenode from runtime/node_modules/, and passes
+ * GABION_ORIGINAL_CWD so the full CLI restores the user's actual working
+ * directory.
  *
- * process.execPath is the real node binary — no shim mode. A spawn-level
- * failure (which cannot come from the delegated command itself) prints
- * its concrete reason instead of silently exiting 1.
+ * A spawn-level failure (which cannot come from the delegated command
+ * itself) prints its concrete reason instead of silently exiting 1.
  */
 export function delegateToFullCli(args: readonly string[]): number {
   const runtimeNodeModules = join(RUNTIME_DIR, "node_modules");
@@ -27,10 +30,16 @@ export function delegateToFullCli(args: readonly string[]): number {
     return 1;
   }
 
-  const cliEntry = join(RUNTIME_DIR, "cli", "gabion.ts");
-  if (!existsSync(cliEntry)) {
+  if (!existsSync(CLI_ENTRY)) {
     console.error(
       "Gabion CLI entry point is missing. Re-install the runtime:\n\n" +
+      "       gabion install\n",
+    );
+    return 1;
+  }
+  if (!existsSync(PINNED_NODE_BINARY)) {
+    console.error(
+      "The Node release the runtime runs on is missing. Re-install the runtime:\n\n" +
       "       gabion install\n",
     );
     return 1;
@@ -42,8 +51,8 @@ export function delegateToFullCli(args: readonly string[]): number {
   };
 
   const result = runExternal(
-    process.execPath,
-    ["--import", "tsx", cliEntry, ...args],
+    PINNED_NODE_BINARY,
+    [CLI_ENTRY, ...args],
     { cwd: RUNTIME_DIR, stdio: "inherit", env },
   );
 

@@ -15,6 +15,13 @@ export const VERSION_JSON_PATH = join(GABION_HOME, "version.json");
 
 export const RUNTIME_DIR = join(GABION_HOME, "runtime");
 
+/**
+ * The CLI entry of the installed runtime: the loader of its bytecode,
+ * run on the pinned Node (pinned-node.ts). Mirrors the "cli/gabion"
+ * entry of the runtime's launch owner (framework/config/runtime-entries.ts).
+ */
+export const CLI_ENTRY = join(RUNTIME_DIR, "cli", "gabion.cjs");
+
 export const ENGINES_DIR = join(GABION_HOME, ".engines");
 
 export const TEMPLATE_DIR = join(GABION_HOME, "template");
