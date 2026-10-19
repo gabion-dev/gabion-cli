@@ -72,6 +72,8 @@ function printUsage(): void {
   console.log("  verify-jar       Start the built JAR as a server would: production profile,");
   console.log("                   empty directory, throwaway database (exit 0 healthy,");
   console.log("                   1 the JAR refused to start, 2 the check could not be performed)");
+  console.log("  java-home        Print the home of the Java this machine resolves to; the");
+  console.log("                   Makefile runs Gradle with JAVA_HOME from it");
   console.log("  init <name>      Create a new project");
   console.log("  stop             Stop the running instance");
   console.log("  restart          Restart the current instance");
