@@ -21,6 +21,10 @@
   ],
   "author": "Aletherium",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gabion-dev/gabion-cli.git"
+  },
   "engines": {
     "node": ">=18.0.0"
   },

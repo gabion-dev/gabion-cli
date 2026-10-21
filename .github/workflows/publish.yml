@@ -1,0 +1,46 @@
+# .github/workflows/publish.yml
+#
+# Publishes the package to npm through trusted publishing: npm accepts the
+# short-lived OIDC identity of this workflow instead of a stored token, so
+# there is no publish secret in the repository to leak.
+#
+# A pushed version tag is the release decision. package.json carries the
+# number, and the job refuses when the tag and the number disagree, so a
+# tag can never publish a version other than the one it names.
+
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # required for the npm trusted-publishing OIDC exchange
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false # a release build never reuses a cache
+
+      - name: Tag matches package.json version
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $expected" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm publish
