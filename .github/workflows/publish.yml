@@ -1,14 +1,21 @@
 # .github/workflows/publish.yml
 #
-# Publishes the package to npm through trusted publishing: npm accepts the
+# Stages the package on npm through trusted publishing: npm accepts the
 # short-lived OIDC identity of this workflow instead of a stored token, so
 # there is no publish secret in the repository to leak.
 #
+# The workflow can only stage. A staged version stays invisible until a
+# maintainer approves it on npmjs.com (Staged Packages) or with
+# `npm stage approve <stage-id>`, both behind two-factor authentication, so
+# a compromised workflow cannot put a release in front of users. The trusted
+# publisher on npm allows `npm stage publish` alone; `npm publish` from here
+# is rejected.
+#
 # A pushed version tag is the release decision. package.json carries the
 # number, and the job refuses when the tag and the number disagree, so a
-# tag can never publish a version other than the one it names.
+# tag can never stage a version other than the one it names.
 
-name: Publish to npm
+name: Stage on npm
 
 on:
   push:
@@ -43,4 +50,4 @@ jobs:
 
       - run: npm ci
       - run: npm run build
-      - run: npm publish
+      - run: npm stage publish # needs npm 11.15.0 or later
