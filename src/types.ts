@@ -92,3 +92,41 @@ export interface RunExternalResult {
   /** Captured stderr ("" in inherit mode). */
   readonly stderr: string;
 }
+// ==========================================
+// Installation steps (install.ts)
+// ==========================================
+
+/**
+ * One step of an installation phase, in the order the phase runs them.
+ * The phase derives its step count from its list, so the "[n/total]"
+ * indicator can never claim a total the code does not perform.
+ */
+export interface InstallStep {
+  readonly id: string;
+  readonly title: string;
+}
+
+// ==========================================
+// WSL (preflight.ts, wsl-exe.ts, windows-install.ts)
+// ==========================================
+
+/** Which WSL this Linux is, judged by the kernel release string. */
+export type WslDetection =
+  | { readonly kind: "not-wsl" }
+  | { readonly kind: "wsl1" | "wsl2"; readonly distribution: string | null };
+
+/** A registered distribution as `wsl.exe --list --verbose` lists it. */
+export interface WslDistribution {
+  readonly name: string;
+  /** 1 or 2 — the VERSION column. */
+  readonly version: number;
+  /** Marked with "*" in the listing. */
+  readonly isDefault: boolean;
+}
+
+/** A Linux user of a distribution, as getent passwd lists it. */
+export interface WslLinuxUser {
+  readonly name: string;
+  readonly uid: number;
+  readonly home: string;
+}

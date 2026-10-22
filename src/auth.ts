@@ -13,6 +13,14 @@ import {
   MIN_TOKEN_LENGTH,
 } from "./constants.js";
 
+export const AUTH_USAGE =
+  "Usage: gabion auth <token>\n" +
+  "       gabion auth --status\n" +
+  "       gabion auth --revoke\n\n" +
+  "Verifies the access token with the platform and saves it in ~/.gabion/auth.json;\n" +
+  "gabion install and self-update download the runtime with it. On Windows the\n" +
+  "token is carried into the WSL distribution by gabion install.";
+
 export async function runAuth(args: readonly string[]): Promise<number> {
   if (args.includes("--revoke")) {
     removeAuthConfig();
@@ -26,9 +34,7 @@ export async function runAuth(args: readonly string[]): Promise<number> {
 
   const token = args[0];
   if (token === undefined || token === "") {
-    console.error("Usage: gabion auth <token>");
-    console.error("       gabion auth --status");
-    console.error("       gabion auth --revoke");
+    console.error(AUTH_USAGE);
     return 1;
   }
 

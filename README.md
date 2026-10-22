@@ -4,10 +4,16 @@ Thin CLI for the Gabion development framework. Handles authentication,
 runtime download from AWS, and delegates all other commands to the full
 runtime CLI installed at `~/.gabion/`.
 
+## Platforms
+
+Linux, macOS, and Windows through WSL 2 (Windows Subsystem for Linux). Gabion
+does not run on Windows itself: on Windows the CLI prepares WSL 2 and installs
+Gabion inside a Linux distribution (see below).
+
 ## Requirements
 
-- Node.js 18+
-- Java 21+ (or let `gabion install` download a portable JDK)
+- Node.js 18+ to run this CLI (the runtime brings its own Node.js release)
+- Java 25+ (or let `gabion install` download a portable JDK)
 - Git (optional — enables module modification tracking; projects work without it)
 
 ## Quick Start
@@ -20,6 +26,43 @@ gabion init my-project
 cd my-project
 gabion dev
 ```
+
+### Windows
+
+Install Node.js for Windows (the MSI from nodejs.org), then in PowerShell:
+
+```powershell
+npm install -g gabion
+gabion auth <token>
+gabion install
+```
+
+`gabion install` reads the state of the machine and takes it the rest of the
+way: it installs WSL 2 when it is absent (Windows asks for administrator
+approval once, then needs a restart — run `gabion install` again after it),
+installs Ubuntu when no distribution is registered, lets Ubuntu ask for your
+Linux user name and password, and installs Gabion inside the distribution —
+with a Node.js for your projects and the `gabion` command. Then open Ubuntu
+from the Start menu and work there:
+
+```bash
+cd ~
+gabion init my-project
+```
+
+Keep projects in your Linux home, not under `/mnt/c`: file watching does not
+work across that boundary.
+
+If you already work inside WSL with your own Node.js (nvm), install the CLI
+there as on Linux: `npm install -g gabion` in the distribution. Windows's npm
+is also visible inside WSL through interop and installs into Windows — make
+sure `node` resolves to a Linux binary first.
+
+Windows PowerShell 5.1 with the `Restricted` execution policy (the default on
+client editions) refuses the `npm` and `gabion` script shims (`npm.ps1`,
+`gabion.ps1`); call `npm.cmd` and `gabion.cmd` instead, or run the commands in
+`cmd`. WSL 1 is not supported: `wsl --set-version <distribution> 2` moves a
+distribution to WSL 2.
 
 ## Commands
 
@@ -37,10 +80,11 @@ gabion dev
 | `gabion auth <token>` | Save and verify an access token             |
 | `gabion auth --status`| Show current authentication status          |
 | `gabion auth --revoke`| Remove saved token                          |
-| `gabion install`      | Download and install the Gabion runtime     |
+| `gabion install`      | Download and install the Gabion runtime; on Windows, prepare WSL 2 and install inside |
 | `gabion uninstall`    | Remove the Gabion runtime from this machine |
 | `gabion self-update`  | Check for and install runtime updates       |
 | `gabion doctor`       | Check prerequisites and installation        |
+| `gabion <cmd> --help` | Describe one of the commands above          |
 
 ### Development (delegated to full runtime CLI)
 
@@ -129,7 +173,7 @@ completeness are never judged.
 ## How It Works
 
 1. `gabion auth` verifies your token against `api.gabion.dev` and saves it to `~/.gabion/auth.json`.
-2. `gabion install` requests a signed download URL, fetches the runtime archive, verifies its SHA-256 checksum, unpacks it into `~/.gabion/`, installs the Node.js release the runtime is built for (named by the archive; verified against the release's published checksums), installs dependencies, downloads engines, and builds JARs. The runtime ships as V8 bytecode and runs on that pinned Node.js, never on the one this CLI runs on. A project template is cached at `~/.gabion/template/` for `gabion init`.
+2. `gabion install` requests a signed download URL, fetches the runtime archive, verifies its SHA-256 checksum, unpacks it into `~/.gabion/`, installs the Node.js release the runtime is built for (named by the archive; verified against the release's published checksums) and the runtime's dependencies — phase 1, printed by this CLI — then hands over to the runtime's own installer, which downloads engines, builds JARs, verifies the installation and obtains the license for this machine — phase 2, printed by the runtime with its own step counter. The runtime ships as V8 bytecode and runs on that pinned Node.js, never on the one this CLI runs on. A project template is cached at `~/.gabion/template/` for `gabion init`. On Windows the same command runs the installation inside a WSL 2 distribution, preparing WSL, the distribution and its Linux user first.
 3. `gabion init` creates a new project from the cached template with all standard modules pre-installed and an initial git commit tagged `gabion/init` (skipped with a hint when Git is not installed). It also generates the project documentation layer (`AGENTS.md`, `ai-context/`, `work-context/`) and verifies it with the documentation checker before the initial commit.
 4. `gabion module` commands manage modules within a project: `install` resolves the module from the vendored template or downloads it from the platform (S3 via signed URL), validates the contract dependency graph, copies files into the six connection points, updates `gabion.manifest.json`, and creates a git baseline tag. `remove` checks that no remaining module depends on the removed module's contracts. `restore` replaces modified files with the original template version. `replace` atomically swaps one module for another, validating the contract graph against the transitive state. `status` compares current files against baseline tags to show accumulated modifications.
 5. `gabion rules` commands manage checker rule bundles. Authoring happens in a working directory created by `rules init`; `rules export` packages it into a hash-verified `.gabion-rules` file. On a consuming machine, `rules import` installs a bundle file into the machine pool at `~/.gabion/rules/`; `rules require` does the import and additionally pins the bundle in the project's `gabion.manifest.json` — a bundle in the pool does nothing until a project pins it. The running dev instance picks up pin changes live. The pool is content-verified on every resolve — bundles are never edited in place.
@@ -143,14 +187,21 @@ completeness are never judged.
 ```
 ~/.gabion/
 ├── auth.json          Access token
+├── license.json       Runtime license for this machine
 ├── version.json       Installed runtime version
-├── runtime/           Framework sources and dependencies
-├── .engines/          Engine binaries and sources
+├── runtime/           Framework (V8 bytecode) and dependencies
+├── .engines/          Engine binaries and sources, incl. the runtime's Node.js
 ├── template/          Project template for gabion init
 ├── rules/             Machine pool of checker rule bundles
 ├── bin/gabion         Shell shim (add to PATH)
 └── node_modules/      Symlink to runtime/node_modules/
 ```
+
+Inside a WSL distribution set up by `gabion install` from Windows, two more
+entries survive `gabion uninstall`, like the npm-installed CLI and your own
+Node.js would on Linux: `thin-cli/` (the copy of this CLI) and `nodejs/` (the
+Node.js for the CLI and your projects, linked as `node`, `npm` and `npx` in
+`~/.local/bin` beside the `gabion` command).
 
 ## License
 

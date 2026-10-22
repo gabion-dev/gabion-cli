@@ -1,4 +1,41 @@
 // src/install.ts
+/**
+ * `gabion install` — the runtime archive onto this machine.
+ *
+ * One installation runs as two processes, and the user sees two phases,
+ * each with its own header and its own step counter:
+ *
+ *   Phase 1 (this CLI): the archive is downloaded, checked and unpacked,
+ *   the Node release it was built for is installed, the runtime's
+ *   dependencies go in — then control is handed to the runtime's own
+ *   installer, which this CLI cannot contain (it is the artifact being
+ *   installed) and whose step list this CLI does not know.
+ *
+ *   Phase 2 (the runtime, `install --post-download`): engines, the Java
+ *   builds, the gateway, verification, the license. Its output is the
+ *   runtime's own and streams through untouched — on macOS it asks the
+ *   user questions, so it cannot be captured or re-numbered here.
+ *
+ * Every counter's total is derived from the list of steps the phase
+ * performs, never written as a literal; steps a phase does not perform
+ * are not printed as "skipped" — they belong to the other producer of the
+ * same installation (the repository checkout), not to this one. The
+ * summary line is the runtime's (it knows whether the license came); the
+ * hint about the next action is printed by whoever accepted the command
+ * — `install` says `gabion init`, `self-update` says what was updated,
+ * and the Windows side, which drives an installation inside WSL, prints
+ * the WSL-specific step itself.
+ *
+ * On Windows the command does not install here: Gabion runs inside WSL 2,
+ * and the Windows side prepares the distribution and installs there
+ * (windows-install.ts).
+ *
+ * Idempotent by construction: every step derives its work from the
+ * filesystem (fresh temp dir, wipe-and-recopy of runtime/template,
+ * version-stamped engine downloads inside phase 2). A rerun after any
+ * failure redoes only real work — no step trusts a position in a previous
+ * run.
+ */
 
 import {
   copyFileSync,
@@ -9,7 +46,6 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
-  writeFileSync,
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -17,11 +53,14 @@ import { readAuthConfig } from "./config.js";
 import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
 import { runExternal, describeRunFailure } from "./run-external.js";
 import { downloadFile, verifySha256, extractTarGz } from "./archive-fetch.js";
-import { ensurePinnedNode } from "./pinned-node.js";
+import { ensurePinnedNode, npmCliOf, PINNED_NODE_DIR } from "./pinned-node.js";
+import { installFromWindows } from "./windows-install.js";
+import { approveRuntimeScripts } from "./runtime-manifest.js";
 import {
   ARCHIVE_PREFIX,
   CLI_ENTRY,
   ENGINES_DIR,
+  FROM_WINDOWS_FLAG,
   GABION_HOME,
   GRADLE_SOURCE_ENGINES,
   HEADLESS_ENGINE,
@@ -29,14 +68,43 @@ import {
   TEMPLATE_DIR,
   VERSION_JSON_PATH,
 } from "./constants.js";
-import type { DownloadResponse, RuntimeDownloadResult } from "./types.js";
+import type { DownloadResponse, InstallStep, RuntimeDownloadResult } from "./types.js";
 
-function logStep(step: number, total: number, message: string): void {
-  console.log(`\n→ [${String(step)}/${String(total)}] ${message}`);
+/** The steps of phase 1, in order. The counter's total is this list's length. */
+const PHASE_ONE_STEPS = [
+  { id: "download", title: "Downloading the runtime archive" },
+  { id: "checksum", title: "Verifying SHA-256 checksum" },
+  { id: "extract", title: "Extracting archive" },
+  { id: "pinned-node", title: "Installing the Node release the runtime runs on" },
+  { id: "runtime-files", title: "Installing runtime files" },
+  { id: "dependencies", title: "Installing runtime dependencies" },
+  { id: "symlinks", title: "Creating workspace symlinks" },
+  { id: "handover", title: "Handing over to the runtime's installer (phase 2)" },
+] as const satisfies readonly InstallStep[];
+
+type PhaseOneStepId = (typeof PHASE_ONE_STEPS)[number]["id"];
+
+/** Print a step of phase 1 with its position in the list; the detail follows the title. */
+function logStep(id: PhaseOneStepId, detail = ""): void {
+  const index = PHASE_ONE_STEPS.findIndex((step) => step.id === id);
+  const step = PHASE_ONE_STEPS[index];
+  if (step === undefined) throw new Error(`"${id}" is not a step of phase 1`);
+  console.log(
+    `\n→ [${String(index + 1)}/${String(PHASE_ONE_STEPS.length)}] ${step.title}${detail === "" ? "" : ` ${detail}`}`,
+  );
 }
 
-function fail(message: string): number {
-  console.error(`\ngabion install: ${message}`);
+export const INSTALL_USAGE =
+  "Usage: gabion install\n\n" +
+  "Downloads the Gabion runtime for the saved access token (gabion auth <token>)\n" +
+  "and installs it under ~/.gabion: the archive and the Node.js release it runs\n" +
+  "on, then — through the runtime's own installer — engines, verification and the\n" +
+  "license for this machine. Running it again repeats only what is missing.\n\n" +
+  "On Windows: prepares WSL 2 (installs it and a Linux distribution when absent,\n" +
+  "creates the Linux user) and installs Gabion inside the distribution.";
+
+function fail(commandName: string, message: string): number {
+  console.error(`\ngabion ${commandName}: ${message}`);
   return 1;
 }
 
@@ -61,28 +129,10 @@ function readPinnedNodeVersion(versionJsonPath: string): string | null {
 }
 
 /**
- * Approve the install script of esbuild (the one trusted runtime dependency
- * with a postinstall script) by writing allowScripts into the runtime
- * manifest BEFORE dependencies are installed.
- */
-function approveRuntimeScripts(runtimeDir: string): void {
-  const manifestPath = join(runtimeDir, "package.json");
-  const raw: unknown = JSON.parse(readFileSync(manifestPath, "utf-8"));
-  if (typeof raw !== "object" || raw === null) return;
-  const manifest = raw as Record<string, unknown>;
-  manifest["allowScripts"] = { esbuild: true };
-  writeFileSync(
-    manifestPath,
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    "utf-8",
-  );
-}
-
-/**
  * Copy engine SOURCE code from the extracted archive into the installed
  * engines directory. Gradle source engines are wiped and re-copied (their
- * build output is regenerated by --post-download). Headless source files
- * are merged with cpSync so binary artifacts (browser/, lib/) survive.
+ * build output is regenerated by phase 2). Headless source files are
+ * merged with cpSync so binary artifacts (browser/, lib/) survive.
  * Binary-only engines (gitleaks, mailpit, etc.) are not in the archive and
  * are untouched.
  */
@@ -112,24 +162,19 @@ function copyEngineSourcesFromArchive(
 }
 
 /**
- * Core download-and-install logic shared between `gabion install` and
- * `gabion self-update`. Downloads the archive, unpacks it, installs
- * npm dependencies, and delegates remaining build steps to the full CLI
- * via `install --post-download`.
- *
- * Idempotent by construction: every step derives its work from the
- * filesystem (fresh temp dir, wipe-and-recopy of runtime/template,
- * version-stamped engine downloads inside --post-download). A rerun
- * after any failure redoes only real work — no step trusts a position
- * in a previous run.
+ * Phase 1 and the handover to phase 2, shared by `gabion install` and
+ * `gabion self-update`. `commandName` is the command the user typed — it
+ * names the headers and the failure messages. Prints no hint about the
+ * next action: that is the caller's, which knows what the user asked for.
  */
 export async function downloadAndInstall(
   download: DownloadResponse,
+  commandName: string,
 ): Promise<number> {
-  const totalSteps = 9;
   const { version, url, sha256 } = download;
 
-  logStep(1, totalSteps, `Downloading runtime v${version}`);
+  console.log("Phase 1 of 2 — the runtime archive, its Node.js and dependencies");
+  logStep("download", `v${version}`);
   const tempDir = mkdtempSync(join(tmpdir(), "gabion-"));
 
   try {
@@ -137,16 +182,16 @@ export async function downloadAndInstall(
     const archivePath = join(tempDir, archiveName);
     await downloadFile(url, archivePath);
 
-    logStep(2, totalSteps, "Verifying SHA-256 checksum");
+    logStep("checksum");
     verifySha256(archivePath, sha256);
     console.log("   Checksum OK");
 
-    logStep(3, totalSteps, "Extracting archive");
+    logStep("extract");
     extractTarGz(archivePath, tempDir);
     const archiveRoot = join(tempDir, `${ARCHIVE_PREFIX}-${version}`);
 
     if (!existsSync(join(archiveRoot, "runtime"))) {
-      return fail("archive missing runtime/ directory");
+      return fail(commandName, "archive missing runtime/ directory");
     }
 
     // The archive names the Node release its bytecode was compiled for;
@@ -155,14 +200,15 @@ export async function downloadAndInstall(
     const pinnedNodeVersion = readPinnedNodeVersion(join(archiveRoot, "version.json"));
     if (pinnedNodeVersion === null) {
       return fail(
+        commandName,
         'archive version.json names no "node" release — this runtime archive predates closed builds',
       );
     }
 
-    logStep(4, totalSteps, "Installing the pinned Node");
+    logStep("pinned-node");
     const pinnedNode = await ensurePinnedNode(pinnedNodeVersion);
 
-    logStep(5, totalSteps, "Installing runtime files");
+    logStep("runtime-files");
     mkdirSync(GABION_HOME, { recursive: true });
 
     if (existsSync(RUNTIME_DIR)) {
@@ -191,56 +237,81 @@ export async function downloadAndInstall(
 
     copyFileSync(join(archiveRoot, "version.json"), VERSION_JSON_PATH);
 
-    // MIRROR NOTICE: steps 5-6 (approveRuntimeScripts + npm install +
-    // node_modules junction) also exist in the runtime's own
-    // framework/cli/commands/install.ts (repo mode, steps 4). The
-    // duplication is forced — the thin CLI cannot import a runtime it
-    // is installing. When changing this sequence, change it there too.
-    logStep(6, totalSteps, "Installing runtime dependencies");
+    // MIRROR NOTICE: this sequence (approveRuntimeScripts + npm install on
+    // the pinned Node + node_modules junction; steps 6–7 here) also exists
+    // in the runtime's own formwork/cli/commands/install.ts (repository
+    // mode, step 5). The duplication is forced — the thin CLI cannot
+    // import a runtime it is installing. When changing this sequence,
+    // change it there too.
+    logStep("dependencies");
     approveRuntimeScripts(RUNTIME_DIR);
-    // npm is a .cmd shim on Windows — shim mode launches it via a shell.
+    // npm of the pinned Node, run on the pinned Node: the dependencies are
+    // installed by the Node that will run them, not by whatever npm PATH
+    // has (inside WSL without a Linux Node, that is Windows's npm).
     const npmResult = runExternal(
-      "npm",
-      ["install", "--omit=dev", "--no-fund", "--no-audit"],
-      { cwd: RUNTIME_DIR, stdio: "inherit", windowsShim: true },
+      pinnedNode,
+      [npmCliOf(PINNED_NODE_DIR), "install", "--omit=dev", "--no-fund", "--no-audit"],
+      { cwd: RUNTIME_DIR, stdio: "inherit" },
     );
     if (!npmResult.ok) {
       return fail(
-        `npm install in runtime failed: ${describeRunFailure("npm", npmResult)}`,
+        commandName,
+        `the runtime's dependencies did not install (${describeRunFailure("npm", npmResult)}) — see npm's messages above.\n` +
+          `  After fixing the cause, run gabion ${commandName} again.`,
       );
     }
 
-    logStep(7, totalSteps, "Creating workspace symlinks");
+    logStep("symlinks");
     const topNodeModules = join(GABION_HOME, "node_modules");
     rmSync(topNodeModules, { recursive: true, force: true });
     symlinkSync(join(RUNTIME_DIR, "node_modules"), topNodeModules, "junction");
 
-    logStep(8, totalSteps, "Finalizing installation");
+    logStep("handover");
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
       GABION_ORIGINAL_CWD: process.cwd(),
     };
     // The runtime runs on its pinned Node, as bytecode behind the CLI
-    // entry's loader — the same launch the delegation uses.
+    // entry's loader — the same launch the delegation uses. Its output is
+    // its own: phase 2 prints its header and counter.
+    console.log("");
     const postResult = runExternal(
       pinnedNode,
       [CLI_ENTRY, "install", "--post-download"],
       { cwd: RUNTIME_DIR, stdio: "inherit", env },
     );
     if (!postResult.ok) {
+      if (postResult.error !== null) {
+        return fail(
+          commandName,
+          `the runtime's installer could not start: ${describeRunFailure("node", postResult)}`,
+        );
+      }
       return fail(
-        `post-download finalization failed: ${describeRunFailure("node", postResult)}`,
+        commandName,
+        `phase 2 stopped (${describeRunFailure("the runtime's installer", postResult)}) — see its messages above.\n` +
+          `  After fixing the cause, run gabion ${commandName} again: it repeats only what is missing.`,
       );
     }
-
-    logStep(9, totalSteps, "Done");
     return 0;
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
-export async function runInstall(_args: readonly string[]): Promise<number> {
+/** What to do next after an installation; printed by the command that accepted `install`. */
+function printInstallHint(): void {
+  console.log(
+    "\n  To create a new project:\n\n" +
+      "       gabion init my-project\n\n" +
+      "  Or initialize in the current directory:\n\n" +
+      "       gabion init\n",
+  );
+}
+
+export async function runInstall(args: readonly string[]): Promise<number> {
+  const fromWindows = args.includes(FROM_WINDOWS_FLAG);
+
   const auth = readAuthConfig();
   if (auth === null) {
     console.error(
@@ -254,7 +325,11 @@ export async function runInstall(_args: readonly string[]): Promise<number> {
     return 1;
   }
 
-  console.log("gabion install — downloading and installing Gabion runtime\n");
+  if (process.platform === "win32") {
+    return installFromWindows(auth);
+  }
+
+  console.log("gabion install — installing the Gabion runtime under ~/.gabion\n");
 
   const currentVersion = null;
 
@@ -271,6 +346,7 @@ export async function runInstall(_args: readonly string[]): Promise<number> {
       return 1;
     }
     return fail(
+      "install",
       `API request failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -280,5 +356,9 @@ export async function runInstall(_args: readonly string[]): Promise<number> {
     return 0;
   }
 
-  return downloadAndInstall(result);
+  const code = await downloadAndInstall(result, "install");
+  // The Windows side that drives an installation inside WSL prints the
+  // next step itself — the WSL-specific one.
+  if (code === 0 && !fromWindows) printInstallHint();
+  return code;
 }

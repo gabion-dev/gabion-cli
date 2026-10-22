@@ -14,7 +14,7 @@
 // SHASUMS256.txt before extraction. A stamp file records the installed
 // release so a rerun with the same release downloads nothing.
 //
-// MIRROR NOTICE: the runtime's own downloader (framework/setup/
+// MIRROR NOTICE: the runtime's own downloader (formwork/setup/
 // download-node.ts) performs the same installation for `gabion install`
 // run from a repository checkout. The two cannot share code — the thin
 // CLI cannot import a runtime it has not yet got running. Change both or
@@ -33,7 +33,12 @@ import { dirname, join } from "path";
 import { ENGINES_DIR } from "./constants.js";
 import { downloadFile, sha256OfFile, extractTarGz } from "./archive-fetch.js";
 
-const DIST_BASE = "https://nodejs.org/dist";
+/** Where nodejs.org publishes every release and its checksum file. */
+export const NODE_DIST_BASE = "https://nodejs.org/dist";
+
+/** The name of the checksum file published beside every release's archives. */
+export const NODE_SHASUMS_FILENAME = "SHASUMS256.txt";
+
 const STAMP_FILENAME = ".installed-version";
 
 /** Directory of the pinned Node; mirrors pinnedNodeDir() in the runtime. */
@@ -42,23 +47,53 @@ export const PINNED_NODE_DIR = join(ENGINES_DIR, "node");
 /** The pinned Node binary; mirrors pinnedNodeBinary() in the runtime. */
 export const PINNED_NODE_BINARY = join(PINNED_NODE_DIR, "bin", "node");
 
+/**
+ * npm as it ships inside a Node release: its command-line entry, run on
+ * that very Node. The `bin/npm` link beside the binary resolves `node`
+ * from PATH through its shebang, and the Node in PATH is whatever the
+ * user has — or, inside WSL without a Linux Node, Windows's npm reached
+ * through interop. Naming the entry and the Node explicitly keeps the
+ * runtime's dependencies installed by the Node that will run them.
+ */
+export function npmCliOf(nodeDir: string): string {
+  return join(nodeDir, "lib", "node_modules", "npm", "bin", "npm-cli.js");
+}
+
+/** The archive name as nodejs.org publishes it; tar.gz, which every system tar reads. */
+export function nodeArchiveName(
+  os: "linux" | "darwin",
+  arch: "x64" | "arm64",
+  version: string,
+): string {
+  return `node-v${version}-${os}-${arch}.tar.gz`;
+}
+
+/** The address of a release's file on nodejs.org. */
+export function nodeDistUrl(version: string, file: string): string {
+  return `${NODE_DIST_BASE}/v${version}/${file}`;
+}
+
+/**
+ * The archive for this machine. Preflight admits only Linux and macOS on
+ * x64 and arm64 to any command that gets here, so another platform is a
+ * programming error, not a user condition.
+ */
 function platformArchiveName(version: string): string {
-  if (process.platform !== "linux" && process.platform !== "darwin") {
+  const os = process.platform;
+  const arch = process.arch;
+  if ((os !== "linux" && os !== "darwin") || (arch !== "x64" && arch !== "arm64")) {
     throw new Error(
-      `${process.platform} is not a supported platform (Linux, WSL and macOS are)`,
+      `pinned Node requested on ${os}/${arch}, which preflight does not admit`,
     );
   }
-  if (process.arch !== "x64" && process.arch !== "arm64") {
-    throw new Error(`${process.arch} is not a supported architecture`);
-  }
-  return `node-v${version}-${process.platform}-${process.arch}.tar.gz`;
+  return nodeArchiveName(os, arch, version);
 }
 
 async function publishedSha256(version: string, archive: string): Promise<string> {
-  const url = `${DIST_BASE}/v${version}/SHASUMS256.txt`;
+  const url = nodeDistUrl(version, NODE_SHASUMS_FILENAME);
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`SHASUMS256.txt request failed: HTTP ${String(response.status)} (${url})`);
+    throw new Error(`${NODE_SHASUMS_FILENAME} request failed: HTTP ${String(response.status)} (${url})`);
   }
   for (const line of (await response.text()).split("\n")) {
     const [sum, name] = line.trim().split(/\s+/);
@@ -92,7 +127,7 @@ export async function ensurePinnedNode(version: string): Promise<string> {
 
   console.log(`   Node ${version} (${process.platform}/${process.arch})`);
   const expected = await publishedSha256(version, archive);
-  await downloadFile(`${DIST_BASE}/v${version}/${archive}`, archivePath);
+  await downloadFile(nodeDistUrl(version, archive), archivePath);
   const actual = sha256OfFile(archivePath);
   if (actual !== expected) {
     rmSync(archivePath, { force: true });

@@ -1,9 +1,21 @@
 // src/self-update.ts
+/**
+ * `gabion self-update` — a newer runtime for the saved token, installed
+ * the same way `gabion install` installs the first one (install.ts). The
+ * runtime's installer prints the summary; this command, having accepted
+ * the user's request, says what changed.
+ */
 
 import { readAuthConfig, readInstalledVersion } from "./config.js";
 import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
 import { downloadAndInstall } from "./install.js";
 import type { DownloadResponse, RuntimeDownloadResult } from "./types.js";
+
+export const SELF_UPDATE_USAGE =
+  "Usage: gabion self-update\n\n" +
+  "Asks the platform for a newer runtime than the installed one and installs it\n" +
+  "the way gabion install does. Projects keep working: they use the runtime from\n" +
+  "~/.gabion at every start.";
 
 function isDownloadResponse(
   result: RuntimeDownloadResult,
@@ -37,8 +49,7 @@ export async function runSelfUpdate(
     return 1;
   }
 
-  console.log(`Current version: ${versionInfo.version}`);
-  console.log("Checking for updates...\n");
+  console.log(`gabion self-update — installed runtime ${versionInfo.version}, checking for a newer one\n`);
 
   let result: RuntimeDownloadResult;
   try {
@@ -53,7 +64,7 @@ export async function runSelfUpdate(
       return 1;
     }
     console.error(
-      `API request failed: ${err instanceof Error ? err.message : String(err)}`,
+      `gabion self-update: API request failed: ${err instanceof Error ? err.message : String(err)}`,
     );
     return 1;
   }
@@ -63,6 +74,10 @@ export async function runSelfUpdate(
     return 0;
   }
 
-  console.log(`New version available: ${result.version}`);
-  return downloadAndInstall(result);
+  console.log(`New version available: ${result.version}\n`);
+  const code = await downloadAndInstall(result, "self-update");
+  if (code === 0) {
+    console.log(`\n  Updated the runtime from ${versionInfo.version} to ${result.version}.\n`);
+  }
+  return code;
 }

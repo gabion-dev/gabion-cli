@@ -4,7 +4,7 @@
  * and of the Windows shim launch strategy (resolveWindowsShim).
  *
  * MIRROR NOTICE: this file deliberately duplicates
- * framework/shared/run-external.ts in the runtime repository. The
+ * formwork/shared/run-external.ts in the runtime repository. The
  * duplication is forced: the thin CLI's job is to install the runtime,
  * so it cannot import from a runtime that may not exist yet. When
  * changing the spawn or signal policy here, change it there — and vice

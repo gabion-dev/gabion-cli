@@ -45,18 +45,23 @@ export function readAuthConfig(): AuthConfig | null {
   }
 }
 
-export function writeAuthConfig(config: AuthConfig): void {
-  mkdirSync(dirname(AUTH_CONFIG_PATH), { recursive: true });
+/**
+ * The content of auth.json for a config — the one serializer, whether the
+ * file is written here or carried into a WSL distribution by the Windows
+ * installer (windows-install.ts), where the same CLI reads it back.
+ */
+export function serializeAuthConfig(config: AuthConfig): string {
   const payload = {
     token: config.token,
     apiUrl: config.apiUrl,
     lastVerifiedAt: config.lastVerifiedAt,
   };
-  writeFileSync(
-    AUTH_CONFIG_PATH,
-    `${JSON.stringify(payload, null, 2)}\n`,
-    "utf-8",
-  );
+  return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+export function writeAuthConfig(config: AuthConfig): void {
+  mkdirSync(dirname(AUTH_CONFIG_PATH), { recursive: true });
+  writeFileSync(AUTH_CONFIG_PATH, serializeAuthConfig(config), "utf-8");
 }
 
 export function removeAuthConfig(): void {

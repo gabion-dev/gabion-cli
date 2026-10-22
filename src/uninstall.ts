@@ -6,13 +6,18 @@
  * artifact it removes. A broken runtime (corrupted node_modules, missing tsx)
  * must not prevent its own removal.
  *
- * Strategy: remove everything inside ~/.gabion/ EXCEPT auth.json.
- * This is more robust than maintaining a whitelist of paths — any future
- * artifacts (caches, logs, stamps) are cleaned automatically. When
- * nothing survives (no auth.json), the home directory itself is removed
- * too — an empty ~/.gabion would be the last trace of the installation.
+ * Strategy: remove everything inside ~/.gabion/ EXCEPT what is not the
+ * installation (constants.ts, UNINSTALL_PRESERVED_ENTRIES). This is more
+ * robust than maintaining a whitelist of paths — any future artifacts
+ * (caches, logs, stamps) are cleaned automatically. When nothing survives,
+ * the home directory itself is removed too — an empty ~/.gabion would be
+ * the last trace of the installation.
  *
- * Preserved: auth.json (use `gabion auth --revoke` to remove separately).
+ * Preserved: auth.json (use `gabion auth --revoke` to remove separately);
+ * inside a WSL distribution set up from Windows, the copy of this CLI and
+ * the Node.js the Windows installer brought for the developer — the
+ * counterparts of the npm-installed CLI and the developer's own Node,
+ * which this command never touched on Linux either.
  * Never touched: per-project files under user's workspace.
  */
 
@@ -27,14 +32,22 @@ import {
 import { homedir } from "os";
 import { createInterface } from "readline";
 import { join } from "path";
-import { GABION_HOME, INSTANCES_JSON_PATH } from "./constants.js";
+import {
+  GABION_HOME,
+  INSTANCES_JSON_PATH,
+  UNINSTALL_PRESERVED_ENTRIES,
+  WSL_NODEJS_DIR_NAME,
+  WSL_THIN_CLI_DIR_NAME,
+} from "./constants.js";
+import { isWslCopy } from "./package-location.js";
 import type { RegistryInstanceEntry } from "./types.js";
 
-/**
- * The only file preserved during uninstall. Re-authentication after
- * reinstall would be a poor experience — the token outlives the runtime.
- */
-const PRESERVED_FILES: ReadonlySet<string> = new Set(["auth.json"]);
+export const UNINSTALL_USAGE =
+  "Usage: gabion uninstall [--force]\n\n" +
+  "Removes the Gabion runtime from this machine: everything under ~/.gabion except\n" +
+  "the access token (gabion auth --revoke removes it) and, inside a WSL distribution\n" +
+  "set up from Windows, the CLI copy and the Node.js it brought. Refuses while an\n" +
+  "instance runs; --force skips the confirmation. Project files are not affected.";
 
 /**
  * Gateway constants, duplicated from the runtime's port-layout on
@@ -301,7 +314,7 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
   }
 
   const entries = readdirSync(GABION_HOME);
-  const removable = entries.filter((name) => !PRESERVED_FILES.has(name));
+  const removable = entries.filter((name) => !UNINSTALL_PRESERVED_ENTRIES.has(name));
 
   if (removable.length === 0) {
     console.log("Nothing to uninstall — Gabion runtime is not installed.");
@@ -335,7 +348,10 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
       "This will remove everything under ~/.gabion/: the runtime, engines,\n" +
         "project template, bin shim, machine settings, and the machine pool\n" +
         "of checker rule bundles.\n" +
-        "Your authentication token and project files are not affected.\n",
+        "Your authentication token and project files are not affected." +
+        (isWslCopy()
+          ? "\nThe Gabion CLI copy and the Node.js that gabion install brought from Windows stay.\n"
+          : "\n"),
     );
 
     const confirmed = await askConfirmation("Continue? (y/N) ");
@@ -374,10 +390,20 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
 
   console.log(`✅ Gabion uninstalled (${String(removedCount)} items removed)`);
   console.log("   To re-install: gabion install");
-  if (leftover.some((name) => PRESERVED_FILES.has(name))) {
+  if (leftover.includes("auth.json")) {
     console.log("   To remove auth token: gabion auth --revoke");
   }
-  console.log("   To remove the CLI itself: npm uninstall -g gabion");
+  if (isWslCopy()) {
+    const kept = [WSL_THIN_CLI_DIR_NAME, WSL_NODEJS_DIR_NAME]
+      .filter((name) => leftover.includes(name))
+      .map((name) => join(GABION_HOME, name));
+    console.log(
+      `   To remove the CLI copy and its Node.js too: rm -r ${[...kept, join(homedir(), ".local", "bin", "gabion")].join(" ")}`,
+    );
+    console.log("   (node, npm and npx in ~/.local/bin point into that Node.js; your projects use them)");
+  } else {
+    console.log("   To remove the CLI itself: npm uninstall -g gabion");
+  }
   console.log(
     `   If your shell profile adds ${join(GABION_HOME, "bin")} to PATH, drop that entry`,
   );

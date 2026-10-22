@@ -1,33 +1,35 @@
 #!/usr/bin/env node
 // src/index.ts
 
-import { existsSync, readFileSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
 import { homedir } from "os";
 
 import type { CommandHandler } from "./types.js";
-import { runAuth } from "./auth.js";
-import { runInstall } from "./install.js";
-import { runSelfUpdate } from "./self-update.js";
-import { runDoctor } from "./doctor.js";
-import { runUninstall } from "./uninstall.js";
+import { runAuth, AUTH_USAGE } from "./auth.js";
+import { runInstall, INSTALL_USAGE } from "./install.js";
+import { runSelfUpdate, SELF_UPDATE_USAGE } from "./self-update.js";
+import { runDoctor, DOCTOR_USAGE } from "./doctor.js";
+import { runUninstall, UNINSTALL_USAGE } from "./uninstall.js";
 import { delegateToFullCli } from "./delegate.js";
+import { preflight } from "./preflight.js";
+import { packageRoot } from "./package-location.js";
 
-/** Commands handled directly by the thin CLI. */
-const LOCAL_COMMANDS: Readonly<Record<string, CommandHandler>> = {
-  auth: runAuth,
-  install: runInstall,
-  uninstall: runUninstall,
-  "self-update": runSelfUpdate,
-  doctor: runDoctor,
+/** Commands handled directly by the thin CLI, each with the help its `--help` prints. */
+const LOCAL_COMMANDS: Readonly<Record<string, { readonly run: CommandHandler; readonly usage: string }>> = {
+  auth: { run: runAuth, usage: AUTH_USAGE },
+  install: { run: runInstall, usage: INSTALL_USAGE },
+  uninstall: { run: runUninstall, usage: UNINSTALL_USAGE },
+  "self-update": { run: runSelfUpdate, usage: SELF_UPDATE_USAGE },
+  doctor: { run: runDoctor, usage: DOCTOR_USAGE },
 };
 
-function printVersion(): void {
-  const __filename = fileURLToPath(import.meta.url);
-  const pkgPath = join(dirname(__filename), "..", "package.json");
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string };
+function isHelpFlag(arg: string | undefined): boolean {
+  return arg === "--help" || arg === "-h";
+}
 
+function printVersion(): void {
+  const pkg = JSON.parse(readFileSync(join(packageRoot(), "package.json"), "utf-8")) as { version: string };
   console.log(`gabion ${pkg.version} (${describeInstalledRuntime()})`);
 }
 
@@ -60,9 +62,11 @@ function printUsage(): void {
   console.log("  auth --status    Show current authentication status");
   console.log("  auth --revoke    Remove saved token");
   console.log("  install          Download and install the Gabion runtime");
+  console.log("                   (on Windows: prepare WSL 2 and install inside the distribution)");
   console.log("  uninstall        Remove the Gabion runtime from this machine");
   console.log("  self-update      Check for and install runtime updates");
   console.log("  doctor           Check system prerequisites and installation");
+  console.log("  <command> --help Describe one of the commands above");
   console.log("");
   console.log("Development (delegated to full runtime CLI):");
   console.log("  dev              Start the development instance");
@@ -82,6 +86,11 @@ function printUsage(): void {
   console.log("  gateway status   Show gateway health, name resolution, instances");
   console.log("  gateway start    Start the machine-global gateway");
   console.log("  gateway stop     Stop the machine-global gateway");
+  console.log("");
+  console.log("License (a token has one active machine; delegated to full runtime CLI):");
+  console.log("  license status   Show the license on this machine");
+  console.log("  license activate Take the token's seat for this machine (the other stops)");
+  console.log("  license release  Give the seat up from this machine");
   console.log("");
   console.log("Module management (delegated to full runtime CLI):");
   console.log("  module install          Install a module from template or platform");
@@ -116,6 +125,8 @@ function printUsage(): void {
   console.log("Documentation layer (delegated to full runtime CLI):");
   console.log("  context init            Create the documentation layer (ai-context/, work-context/)");
   console.log("  context check           Verify documentation structural integrity");
+  console.log("");
+  console.log("Platforms: Linux, macOS, Windows through WSL 2.");
 }
 
 async function main(): Promise<void> {
@@ -127,18 +138,25 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (
-    commandName === undefined ||
-    commandName === "--help" ||
-    commandName === "-h"
-  ) {
+  if (commandName === undefined || isHelpFlag(commandName)) {
     printUsage();
     process.exit(commandName === undefined ? 1 : 0);
   }
 
-  const localHandler = LOCAL_COMMANDS[commandName];
-  if (localHandler !== undefined) {
-    const code = await localHandler(args.slice(1));
+  // Before the token, before the network: can Gabion work here at all?
+  const refusal = preflight(commandName);
+  if (refusal !== null) {
+    console.error(refusal);
+    process.exit(1);
+  }
+
+  const local = LOCAL_COMMANDS[commandName];
+  if (local !== undefined) {
+    if (isHelpFlag(args[1])) {
+      console.log(local.usage);
+      process.exit(0);
+    }
+    const code = await local.run(args.slice(1));
     process.exit(code);
   }
 
