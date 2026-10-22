@@ -315,7 +315,10 @@ function ensureUser(distribution: string): WslLinuxUser | { readonly exitCode: n
         ),
       };
     }
-    step(`${distribution} has no Linux user yet — it now asks for a user name and a password (your account inside ${distribution}):\n`);
+    step(
+      `${distribution} has no Linux user yet — it now asks for your account inside ${distribution}:\n` +
+        "  a user name (a suggested name is accepted with Enter) and a password, typed twice and not shown.\n",
+    );
     const setupRun = wslConsole(["-d", distribution, "-u", "root", "--exec", setup.command], "inherit");
     if (!setupRun.ok) {
       return {
