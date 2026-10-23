@@ -20,7 +20,7 @@ Gabion inside a Linux distribution (see below).
 
 ```bash
 npm install -g gabion
-gabion auth <token>
+gabion auth            # asks for your access token; what you paste is not shown
 gabion install
 gabion init my-project
 cd my-project
@@ -29,13 +29,19 @@ gabion dev
 
 ### Windows
 
-Install Node.js for Windows (the MSI from nodejs.org), then in PowerShell:
+Install Node.js for Windows: on https://nodejs.org/en/download take
+**Windows Installer (.msi)** and run it. Then open a new PowerShell window:
 
 ```powershell
 npm install -g gabion
-gabion auth <token>
+gabion auth
 gabion install
 ```
+
+`gabion auth` asks for the access token and does not show what you paste. It
+never takes the token on the command line: there the token would stay on the
+screen, in the shell's history file and in the process list. Scripts pipe it
+in: `<command printing the token> | gabion auth --stdin`.
 
 `gabion install` reads the state of the machine and takes it the rest of the
 way: it installs WSL 2 when it is absent (Windows asks for administrator
@@ -77,7 +83,8 @@ distribution to WSL 2.
 
 |         Command       |                   Description               |
 |-----------------------|---------------------------------------------|
-| `gabion auth <token>` | Save and verify an access token             |
+| `gabion auth`         | Ask for an access token (not shown), verify and save it |
+| `gabion auth --stdin` | The same, reading the token from standard input |
 | `gabion auth --status`| Show current authentication status          |
 | `gabion auth --revoke`| Remove saved token                          |
 | `gabion install`      | Download and install the Gabion runtime; on Windows, prepare WSL 2 and install inside |

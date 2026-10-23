@@ -37,8 +37,9 @@
  *      (wsl-provision.ts), then `gabion install` runs inside through the
  *      copy of this CLI, and this side prints the next step.
  *
- * Every wsl.exe call goes through wsl-exe.ts (encoding, closed stdin,
- * `--exec` only). Docker Desktop's own distributions are never chosen as
+ * Every wsl.exe call goes through wsl-exe.ts (encoding, stdin closed but
+ * for the stub's installation and programs that talk to the user, `--exec`
+ * only). Docker Desktop's own distributions are never chosen as
  * the home for Gabion.
  */
 
@@ -126,9 +127,16 @@ function restartRequired(): number {
 // WSL itself
 // ==========================================
 
+/**
+ * The one wsl.exe call that needs the console: the inbox stub installs
+ * only from a console. Without one it answers "The Windows Subsystem for
+ * Linux is not installed. You can install by running 'wsl.exe --install'"
+ * with exit 1 and installs nothing; with one it asks for elevation at once
+ * and installs, without the key-press wait it puts before other commands.
+ */
 function installWsl(): number {
   step("WSL is not installed — installing it (Windows asks for administrator approval in a separate window)");
-  const result = wslConsole(["--install", "--no-distribution"], "ignore");
+  const result = wslConsole(["--install", "--no-distribution"], "inherit");
   if (!existsSync(PACKAGED_WSL_EXE)) {
     if (!result.ok) console.error(`   ${describeWsl(result)}`);
     return fail(

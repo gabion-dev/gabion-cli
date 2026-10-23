@@ -42,12 +42,17 @@ const TOKEN_REJECTION_MESSAGES: Readonly<Record<string, string>> = {
     "Access token expired.\n\n" +
     "  1. Request a new token from the project author\n" +
     "  2. Authenticate with the new token:\n\n" +
-    "       gabion auth YOUR_TOKEN\n",
+    "       gabion auth\n",
   not_found:
     "Access token not recognized.\n\n" +
     "  Authenticate with a valid token:\n\n" +
-    "       gabion auth YOUR_TOKEN\n",
+    "       gabion auth\n",
 };
+
+/** What to tell the user for a token refusal reason (revoked, expired, not_found). */
+export function describeTokenRefusal(reason: string): string {
+  return TOKEN_REJECTION_MESSAGES[reason] ?? `Token rejected: ${reason}`;
+}
 
 /**
  * Format a human-readable error message from an ApiError whose reason
@@ -56,7 +61,7 @@ const TOKEN_REJECTION_MESSAGES: Readonly<Record<string, string>> = {
  */
 export function formatTokenError(error: ApiError): string {
   if (error.reason !== "") {
-    return TOKEN_REJECTION_MESSAGES[error.reason] ?? `Token rejected: ${error.reason}`;
+    return describeTokenRefusal(error.reason);
   }
   return `API request failed (HTTP ${String(error.status)})`;
 }

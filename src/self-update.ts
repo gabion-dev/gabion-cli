@@ -32,7 +32,7 @@ export async function runSelfUpdate(
       "Gabion requires an access token to check for updates.\n\n" +
       "  1. Get your token from the project author\n" +
       "  2. Authenticate:\n\n" +
-      "       gabion auth YOUR_TOKEN\n\n" +
+      "       gabion auth\n\n" +
       "  3. Then re-run:\n\n" +
       "       gabion self-update\n",
     );

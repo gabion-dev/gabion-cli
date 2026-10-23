@@ -58,7 +58,7 @@ function printUsage(): void {
   console.log("Usage: gabion <command> [options]");
   console.log("");
   console.log("Setup:");
-  console.log("  auth <token>     Authenticate with a Gabion access token");
+  console.log("  auth             Authenticate: asks for the access token (not shown)");
   console.log("  auth --status    Show current authentication status");
   console.log("  auth --revoke    Remove saved token");
   console.log("  install          Download and install the Gabion runtime");

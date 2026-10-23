@@ -9,11 +9,12 @@
  * uninstalled WSL does not know the variable and still answers in
  * UTF-16LE — so the raw bytes are read and the encoding is judged per
  * answer, which a text-mode runner cannot do. And with a console on its
- * stdin the stub waits a minute for a key press that would start
- * installing WSL — so stdin is a closed device for every management
- * command, and inherited only for programs run inside a distribution for
- * the user (its first-run setup, the installation itself): those are
- * Linux programs without that habit.
+ * stdin the stub answers a listing by waiting a minute for a key press
+ * that would start installing WSL — so stdin is a closed device for every
+ * management command, and inherited for the stub's own `--install` (which
+ * installs only from a console and asks for elevation at once, without
+ * that wait) and for programs run inside a distribution for the user (its
+ * first-run setup, the installation itself).
  *
  * Argument passing: Node quotes arguments for Windows's CommandLineToArgvW
  * and wsl.exe parses them back with the same function; after `--exec`

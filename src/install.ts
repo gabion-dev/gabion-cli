@@ -50,7 +50,13 @@ import {
 import { join } from "path";
 import { tmpdir } from "os";
 import { readAuthConfig } from "./config.js";
-import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
+import {
+  requestRuntimeDownload,
+  verifyToken,
+  ApiError,
+  formatTokenError,
+  describeTokenRefusal,
+} from "./api-client.js";
 import { runExternal, describeRunFailure } from "./run-external.js";
 import { downloadFile, verifySha256, extractTarGz } from "./archive-fetch.js";
 import { ensurePinnedNode, npmCliOf, PINNED_NODE_DIR } from "./pinned-node.js";
@@ -96,7 +102,7 @@ function logStep(id: PhaseOneStepId, detail = ""): void {
 
 export const INSTALL_USAGE =
   "Usage: gabion install\n\n" +
-  "Downloads the Gabion runtime for the saved access token (gabion auth <token>)\n" +
+  "Downloads the Gabion runtime for the saved access token (gabion auth)\n" +
   "and installs it under ~/.gabion: the archive and the Node.js release it runs\n" +
   "on, then — through the runtime's own installer — engines, verification and the\n" +
   "license for this machine. Running it again repeats only what is missing.\n\n" +
@@ -309,6 +315,24 @@ function printInstallHint(): void {
   );
 }
 
+/**
+ * The saved token as the platform sees it now: null when it is accepted,
+ * otherwise what to tell the user. An unreachable platform is a problem
+ * too — the installation downloads everything it installs.
+ */
+async function checkTokenBeforeWindowsInstall(token: string, apiUrl: string): Promise<string | null> {
+  try {
+    const result = await verifyToken(token, apiUrl);
+    return result.valid ? null : describeTokenRefusal(result.reason);
+  } catch (err: unknown) {
+    if (err instanceof ApiError && err.reason !== "") return formatTokenError(err);
+    return (
+      `Could not check the access token with the platform: ${err instanceof Error ? err.message : String(err)}\n\n` +
+      "  The installation downloads everything it installs; check the network and run gabion install again."
+    );
+  }
+}
+
 export async function runInstall(args: readonly string[]): Promise<number> {
   const fromWindows = args.includes(FROM_WINDOWS_FLAG);
 
@@ -318,7 +342,7 @@ export async function runInstall(args: readonly string[]): Promise<number> {
       "Gabion requires an access token to download the runtime.\n\n" +
       "  1. Get your token from the project author\n" +
       "  2. Authenticate:\n\n" +
-      "       gabion auth YOUR_TOKEN\n\n" +
+      "       gabion auth\n\n" +
       "  3. Then re-run:\n\n" +
       "       gabion install\n",
     );
@@ -326,6 +350,15 @@ export async function runInstall(args: readonly string[]): Promise<number> {
   }
 
   if (process.platform === "win32") {
+    // From Windows the token is first used inside the distribution, after
+    // WSL, the distribution and its user are set up — minutes, and maybe a
+    // restart, later. It is checked here, before anything changes, so a
+    // token the platform refuses stops the run at once with its action.
+    const tokenProblem = await checkTokenBeforeWindowsInstall(auth.token, auth.apiUrl);
+    if (tokenProblem !== null) {
+      console.error(`\n✖ ${tokenProblem}`);
+      return 1;
+    }
     return installFromWindows(auth);
   }
 
