@@ -5,8 +5,9 @@ import { join } from "path";
 import { readInstalledVersion } from "./config.js";
 import { MIN_NODE_MAJOR, RUNTIME_DIR } from "./constants.js";
 import { delegateToFullCli } from "./delegate.js";
-import { detectWsl } from "./preflight.js";
+import { detectWsl, locateWslPath } from "./preflight.js";
 import { runExternal } from "./run-external.js";
+import type { WslPathLocation } from "./types.js";
 
 export const DOCTOR_USAGE =
   "Usage: gabion doctor\n\n" +
@@ -33,10 +34,15 @@ function probe(command: string, args: readonly string[]): string | null {
   return combined.split("\n")[0] ?? combined;
 }
 
-/** True when the command PATH resolves to lives on a Windows drive mounted into WSL. */
-function resolvesUnderMnt(command: string): boolean {
+/**
+ * Where the command PATH resolves to lives, by WSL's own path translation
+ * — a Windows drive is where Windows's programs are reached through
+ * interop. Null when the shell finds no such command.
+ */
+function locateCommand(command: string): WslPathLocation | null {
   const res = runExternal("sh", ["-c", `command -v ${command}`], { stdio: "capture" });
-  return res.ok && res.stdout.trim().startsWith("/mnt/");
+  const path = res.stdout.trim();
+  return res.ok && path !== "" ? locateWslPath(path) : null;
 }
 
 export async function runDoctor(args: readonly string[]): Promise<number> {
@@ -74,8 +80,8 @@ export async function runDoctor(args: readonly string[]): Promise<number> {
   }
 
   const npmLine = probe("npm", ["--version"]);
-  const npmFromWindows = wsl.kind === "wsl2" && npmLine !== null && resolvesUnderMnt("npm");
-  if (npmFromWindows) {
+  const npmLocation = wsl.kind === "wsl2" && npmLine !== null ? locateCommand("npm") : null;
+  if (npmLocation?.kind === "windows") {
     // Interop lets a Linux shell run Windows's npm, and `npm install -g`
     // then installs into Windows while reporting success — the very
     // program that answered here cannot install anything for Linux.
@@ -84,6 +90,8 @@ export async function runDoctor(args: readonly string[]): Promise<number> {
         "Install Node.js inside the distribution (gabion install from Windows brings one), then restart the terminal",
     );
     failures++;
+  } else if (npmLocation?.kind === "unknown") {
+    console.log(`✅ npm: ${npmLine ?? ""} (could not tell whether it is Windows's: ${npmLocation.reason})`);
   } else if (npmLine !== null) {
     console.log(`✅ npm: ${npmLine}`);
   } else {

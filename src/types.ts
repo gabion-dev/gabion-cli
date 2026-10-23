@@ -115,6 +115,15 @@ export type WslDetection =
   | { readonly kind: "not-wsl" }
   | { readonly kind: "wsl1" | "wsl2"; readonly distribution: string | null };
 
+/** Where a path lives, as WSL's own path translation (wslpath) sees it. */
+export type WslPathLocation =
+  /** In the distribution's own file system — or not under WSL at all. */
+  | { readonly kind: "linux" }
+  /** On a Windows drive or share mounted into the distribution. */
+  | { readonly kind: "windows"; readonly windowsPath: string }
+  /** The translation could not be asked; the reason says why. */
+  | { readonly kind: "unknown"; readonly reason: string };
+
 /** A registered distribution as `wsl.exe --list --verbose` lists it. */
 export interface WslDistribution {
   readonly name: string;

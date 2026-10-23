@@ -29,12 +29,13 @@
  * systemd-detect-virt (the same answer for both).
  *
  * MIRROR NOTICE: formwork/shared/wsl.ts in the runtime applies the same
- * test — the runtime cannot be imported by the CLI that installs it.
- * Change both or neither.
+ * test and the same path translation (locateWslPath) — the runtime cannot
+ * be imported by the CLI that installs it. Change both or neither.
  */
 
 import { release } from "os";
-import type { WslDetection } from "./types.js";
+import { describeRunFailure, runExternal } from "./run-external.js";
+import type { WslDetection, WslPathLocation } from "./types.js";
 
 /** The commands this CLI runs on Windows itself; everything else lives inside WSL. */
 const COMMANDS_ON_WINDOWS: ReadonlySet<string> = new Set(["auth", "install"]);
@@ -49,6 +50,34 @@ export function detectWsl(): WslDetection {
   if (kernel.includes("Microsoft")) return { kind: "wsl1", distribution };
   if (/microsoft|wsl/i.test(kernel)) return { kind: "wsl2", distribution };
   return { kind: "not-wsl" };
+}
+
+/**
+ * The prefix wslpath gives every path of the distribution's own file
+ * system (\\wsl.localhost\<distribution>\…).
+ */
+const DISTRIBUTION_SHARE_PREFIX = "\\\\wsl.localhost\\";
+
+/**
+ * Where WSL's own path translation places a path: `wslpath -w` answers
+ * C:\… for a Windows drive mounted into the distribution and
+ * \\wsl.localhost\<distribution>\… for its own file system. WSL mounts
+ * Windows drives several ways (9p, virtiofs) under a mount root that is a
+ * setting, so neither the mount table read here nor the name /mnt/ would
+ * be the same answer WSL gives.
+ */
+export function locateWslPath(path: string): WslPathLocation {
+  if (detectWsl().kind === "not-wsl") return { kind: "linux" };
+  const res = runExternal("wslpath", ["-w", path], { stdio: "capture" });
+  if (!res.ok) {
+    const said = res.stderr.trim();
+    const failure = describeRunFailure("wslpath", res);
+    return { kind: "unknown", reason: said === "" ? failure : `${failure}: ${said}` };
+  }
+  const windowsPath = res.stdout.trim();
+  if (windowsPath === "") return { kind: "unknown", reason: "wslpath answered nothing" };
+  if (windowsPath.startsWith(DISTRIBUTION_SHARE_PREFIX)) return { kind: "linux" };
+  return { kind: "windows", windowsPath };
 }
 
 /** The Windows command that moves a distribution to WSL 2. */
