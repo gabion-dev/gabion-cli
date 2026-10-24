@@ -13,7 +13,7 @@
  * the home directory itself is removed too — an empty ~/.gabion would be
  * the last trace of the installation.
  *
- * Preserved: auth.json (use `gabion auth --revoke` to remove separately);
+ * Preserved: auth.json (use `gabion auth --remove` to remove separately);
  * inside a WSL distribution set up from Windows, the copy of this CLI and
  * the Node.js the Windows installer brought for the developer — the
  * counterparts of the npm-installed CLI and the developer's own Node,
@@ -45,7 +45,7 @@ import type { RegistryInstanceEntry } from "./types.js";
 export const UNINSTALL_USAGE =
   "Usage: gabion uninstall [--force]\n\n" +
   "Removes the Gabion runtime from this machine: everything under ~/.gabion except\n" +
-  "the access token (gabion auth --revoke removes it) and, inside a WSL distribution\n" +
+  "the access token (gabion auth --remove removes it) and, inside a WSL distribution\n" +
   "set up from Windows, the CLI copy and the Node.js it brought. Refuses while an\n" +
   "instance runs; --force skips the confirmation. Project files are not affected.";
 
@@ -391,7 +391,7 @@ export async function runUninstall(args: readonly string[]): Promise<number> {
   console.log(`✅ Gabion uninstalled (${String(removedCount)} items removed)`);
   console.log("   To re-install: gabion install");
   if (leftover.includes("auth.json")) {
-    console.log("   To remove auth token: gabion auth --revoke");
+    console.log("   To remove auth token: gabion auth --remove");
   }
   if (isWslCopy()) {
     const kept = [WSL_THIN_CLI_DIR_NAME, WSL_NODEJS_DIR_NAME]

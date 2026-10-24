@@ -18,37 +18,49 @@ import {
 } from "./constants.js";
 import type { AuthConfig, VersionInfo } from "./types.js";
 
+/**
+ * The content of an auth.json as a config. `where` names the file in the
+ * error. A file that is there but holds no token is an error, not "not
+ * authenticated": read as absent, a damaged file would send the user to
+ * `gabion auth` without saying why the saved token stopped counting.
+ */
+export function parseAuthConfig(text: string, where: string): AuthConfig {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (err: unknown) {
+    throw new Error(
+      `${where} is not valid JSON (${err instanceof Error ? err.message : String(err)}) — ` +
+        "save the token again with: gabion auth",
+    );
+  }
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error(`${where} is not a token file — save the token again with: gabion auth`);
+  }
+  const obj = raw as Record<string, unknown>;
+  const token = obj["token"];
+  if (typeof token !== "string" || token === "") {
+    throw new Error(`${where} holds no token — save the token again with: gabion auth`);
+  }
+  return {
+    token,
+    apiUrl: typeof obj["apiUrl"] === "string" ? obj["apiUrl"] : DEFAULT_API_URL,
+    lastVerifiedAt: typeof obj["lastVerifiedAt"] === "string" ? obj["lastVerifiedAt"] : null,
+  };
+}
+
+/** The saved token of this machine's ~/.gabion, or null when none is saved. */
 export function readAuthConfig(): AuthConfig | null {
   if (!existsSync(AUTH_CONFIG_PATH)) {
     return null;
   }
-  try {
-    const raw: unknown = JSON.parse(readFileSync(AUTH_CONFIG_PATH, "utf-8"));
-    if (typeof raw !== "object" || raw === null) {
-      return null;
-    }
-    const obj = raw as Record<string, unknown>;
-    if (typeof obj["token"] !== "string" || obj["token"] === "") {
-      return null;
-    }
-    return {
-      token: obj["token"],
-      apiUrl:
-        typeof obj["apiUrl"] === "string" ? obj["apiUrl"] : DEFAULT_API_URL,
-      lastVerifiedAt:
-        typeof obj["lastVerifiedAt"] === "string"
-          ? obj["lastVerifiedAt"]
-          : null,
-    };
-  } catch {
-    return null;
-  }
+  return parseAuthConfig(readFileSync(AUTH_CONFIG_PATH, "utf-8"), AUTH_CONFIG_PATH);
 }
 
 /**
  * The content of auth.json for a config — the one serializer, whether the
- * file is written here or carried into a WSL distribution by the Windows
- * installer (windows-install.ts), where the same CLI reads it back.
+ * file is written here or into a WSL distribution from Windows
+ * (wsl-gabion-home.ts), where the same CLI reads it back.
  */
 export function serializeAuthConfig(config: AuthConfig): string {
   const payload = {

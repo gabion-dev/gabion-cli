@@ -11,6 +11,12 @@ export type VerifyResponse =
   | { readonly valid: true; readonly name?: string }
   | { readonly valid: false; readonly reason: string };
 
+/** Answer of /api/auth/revoke: when the token was revoked, and whether that was before this call. */
+export interface RevokeResponse {
+  readonly revokedAt: string;
+  readonly already: boolean;
+}
+
 /** Answer of /api/runtime/download when a newer runtime exists. */
 export interface DownloadResponse {
   readonly version: string;
@@ -142,6 +148,13 @@ export type GitIdentityState =
   | { readonly kind: "configured"; readonly name: string; readonly email: string }
   | { readonly kind: "unconfigured"; readonly missing: readonly ("user.name" | "user.email")[] }
   | { readonly kind: "no-git" };
+
+/** Where Gabion is installed inside WSL, as the installation recorded it. */
+export interface WslGabionHome {
+  readonly distribution: string;
+  /** The Linux user it is installed for. */
+  readonly user: string;
+}
 
 export interface WslLinuxUser {
   readonly name: string;

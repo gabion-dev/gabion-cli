@@ -43,6 +43,12 @@ never takes the token on the command line: there the token would stay on the
 screen, in the shell's history file and in the process list. Scripts pipe it
 in: `<command printing the token> | gabion auth --stdin`.
 
+The token waits in Windows only until the first `gabion install` carries it
+into the distribution; from then on it is kept there alone. `gabion auth`,
+`gabion auth --status`, `--remove` and `--revoke` typed in PowerShell act on
+that copy — the same file `gabion auth` changes when typed inside the
+distribution — and `gabion install` run again takes the token from there.
+
 `gabion install` reads the state of the machine and takes it the rest of the
 way: it installs WSL 2 when it is absent (Windows asks for administrator
 approval once, then needs a restart — run `gabion install` again after it),
@@ -89,7 +95,8 @@ distribution to WSL 2.
 | `gabion auth`         | Ask for an access token (not shown), verify and save it |
 | `gabion auth --stdin` | The same, reading the token from standard input |
 | `gabion auth --status`| Show current authentication status          |
-| `gabion auth --revoke`| Remove saved token                          |
+| `gabion auth --remove`| Remove the token from this machine; it stays valid elsewhere |
+| `gabion auth --revoke`| Revoke the token on the platform for every machine (a leak, a lost machine); asks you to type its first 8 characters; final — a new token comes from the project author |
 | `gabion install`      | Download and install the Gabion runtime; on Windows, prepare WSL 2 and install inside |
 | `gabion uninstall`    | Remove the Gabion runtime from this machine |
 | `gabion self-update`  | Check for and install runtime updates       |
@@ -197,7 +204,7 @@ completeness are never judged.
 
 ## How It Works
 
-1. `gabion auth` verifies your token against `api.gabion.dev` and saves it to `~/.gabion/auth.json`.
+1. `gabion auth` verifies your token against `api.gabion.dev` and saves it to `~/.gabion/auth.json` (on Windows, once Gabion is installed, to that file inside the WSL distribution).
 2. `gabion install` first makes sure Git knows who you are — it asks for your name and email once when they are not set, and writes them to your global Git configuration — then requests a signed download URL, fetches the runtime archive, verifies its SHA-256 checksum, unpacks it into `~/.gabion/`, installs the Node.js release the runtime is built for (named by the archive; verified against the release's published checksums) and the runtime's dependencies — phase 1, printed by this CLI — then hands over to the runtime's own installer, which downloads engines, builds JARs, verifies the installation and obtains the license for this machine — phase 2, printed by the runtime with its own step counter. The runtime ships as V8 bytecode and runs on that pinned Node.js, never on the one this CLI runs on. A project template is cached at `~/.gabion/template/` for `gabion init`. On Windows the same command runs the installation inside a WSL 2 distribution, preparing WSL, the distribution and its Linux user first.
 3. `gabion init` creates a new project from the cached template with all standard modules pre-installed and an initial git commit tagged `gabion/init` (skipped with a hint when Git is not installed; refused before anything is written when Git does not know your name and email). It also generates the project documentation layer (`AGENTS.md`, `ai-context/`, `work-context/`) and verifies it with the documentation checker before the initial commit.
 4. `gabion module` commands manage modules within a project: `install` resolves the module from the vendored template or downloads it from the platform (S3 via signed URL), validates the contract dependency graph, copies files into the six connection points, updates `gabion.manifest.json`, and creates a git baseline tag. `remove` checks that no remaining module depends on the removed module's contracts. `restore` replaces modified files with the original template version. `replace` atomically swaps one module for another, validating the contract graph against the transitive state. `status` compares current files against baseline tags to show accumulated modifications.
@@ -213,7 +220,8 @@ completeness are never judged.
 ~/.gabion/
 ├── auth.json          Access token
 ├── license.json       Runtime license for this machine
-├── version.json       Installed runtime version
+├── version.json       Installed runtime version (written last, once an installation completed)
+├── runtime.new/       Only while installing: the new runtime, prepared before it replaces runtime/
 ├── instances.json     Registry of the development instances on this machine
 ├── gateway.json       Process, port and version of the running gateway
 ├── gateway.log        Log of the gateway
@@ -231,6 +239,11 @@ entries survive `gabion uninstall`, like the npm-installed CLI and your own
 Node.js would on Linux: `thin-cli/` (the copy of this CLI) and `nodejs/` (the
 Node.js for the CLI and your projects, linked as `node`, `npm` and `npx` in
 `~/.local/bin` beside the `gabion` command).
+
+On the Windows side `~/.gabion` (`%UserProfile%\.gabion`) holds
+`wsl-home.json` — the distribution and the Linux user `gabion install`
+installed for, so later commands go there even if another distribution
+becomes the default — and, only before the first installation, `auth.json`.
 
 ## License
 

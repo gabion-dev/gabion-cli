@@ -60,7 +60,8 @@ function printUsage(): void {
   console.log("Setup:");
   console.log("  auth             Authenticate: asks for the access token (not shown)");
   console.log("  auth --status    Show current authentication status");
-  console.log("  auth --revoke    Remove saved token");
+  console.log("  auth --remove    Remove the token from this machine (it stays valid)");
+  console.log("  auth --revoke    Revoke the token on the platform, for every machine");
   console.log("  install          Download and install the Gabion runtime");
   console.log("                   (on Windows: prepare WSL 2 and install inside the distribution)");
   console.log("  uninstall        Remove the Gabion runtime from this machine");

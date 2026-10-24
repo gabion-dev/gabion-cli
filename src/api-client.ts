@@ -1,6 +1,7 @@
 // src/api-client.ts
 
 import type {
+  RevokeResponse,
   VerifyResponse,
   RuntimeDownloadResult,
 } from "./types.js";
@@ -34,8 +35,10 @@ export class ApiError extends Error {
 
 const TOKEN_REJECTION_MESSAGES: Readonly<Record<string, string>> = {
   revoked:
-    "Access token revoked. Your access to Gabion has been terminated.\n\n" +
-    "  To remove the runtime:\n\n" +
+    "Access token revoked — by the project author, or by its holder (gabion auth --revoke).\n\n" +
+    "  To keep working, ask the project author for a new token, then:\n\n" +
+    "       gabion auth\n\n" +
+    "  To remove the runtime instead:\n\n" +
     "       gabion uninstall\n\n" +
     "  Project files are not affected.\n",
   expired:
@@ -133,6 +136,14 @@ function readRuntimeDownloadResult(url: string, body: unknown): RuntimeDownloadR
   return { version, url: requireString(url, body, "url"), sha256 };
 }
 
+function readRevokeResponse(url: string, body: unknown): RevokeResponse {
+  if (!isRecord(body)) throw new ResponseShapeError(url, "not a JSON object");
+  if (body["revoked"] !== true) throw new ResponseShapeError(url, `"revoked" is not true`);
+  const already = body["already"];
+  if (typeof already !== "boolean") throw new ResponseShapeError(url, `"already" is not a boolean`);
+  return { revokedAt: requireString(url, body, "revokedAt"), already };
+}
+
 async function postJson<T>(
   url: string,
   body: unknown,
@@ -182,4 +193,14 @@ export async function requestRuntimeDownload(
 ): Promise<RuntimeDownloadResult> {
   const url = `${baseUrl ?? DEFAULT_API_URL}/api/runtime/download`;
   return postJson(url, { token, currentVersion }, readRuntimeDownloadResult);
+}
+
+/**
+ * Revoke the token on the platform, for every machine at once — the
+ * holder's own revocation (gabion auth --revoke). Final: a new token comes
+ * from the project author.
+ */
+export async function revokeToken(token: string, baseUrl?: string): Promise<RevokeResponse> {
+  const url = `${baseUrl ?? DEFAULT_API_URL}/api/auth/revoke`;
+  return postJson(url, { token }, readRevokeResponse);
 }

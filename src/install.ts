@@ -30,11 +30,20 @@
  * and the Windows side prepares the distribution and installs there
  * (windows-install.ts).
  *
+ * The installed runtime is never removed before its replacement is whole:
+ * the archive's runtime is copied beside it and its dependencies are
+ * installed there; only then the two switch places, and the engine
+ * sources and the project template of the same release follow. A failure
+ * before the switch — a network drop during `npm install` — leaves the
+ * previous installation working and together. The version stamp is
+ * written last, after phase 2: a run that stopped anywhere leaves the
+ * previous stamp, so self-update still sees a runtime to replace instead
+ * of calling a broken one up to date.
+ *
  * Idempotent by construction: every step derives its work from the
- * filesystem (fresh temp dir, wipe-and-recopy of runtime/template,
- * version-stamped engine downloads inside phase 2). A rerun after any
- * failure redoes only real work — no step trusts a position in a previous
- * run.
+ * filesystem (fresh temp dir, a fresh staging directory, version-stamped
+ * engine downloads inside phase 2). A rerun after any failure redoes only
+ * real work — no step trusts a position in a previous run.
  */
 
 import {
@@ -45,6 +54,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
 } from "fs";
@@ -62,6 +72,7 @@ import { runExternal, describeRunFailure } from "./run-external.js";
 import { downloadFile, verifySha256, extractTarGz } from "./archive-fetch.js";
 import { ensurePinnedNode, npmCliOf, PINNED_NODE_DIR } from "./pinned-node.js";
 import { installFromWindows } from "./windows-install.js";
+import { describeTokenInside, locateWslGabion, readTokenInside } from "./wsl-gabion-home.js";
 import { approveRuntimeScripts } from "./runtime-manifest.js";
 import { ensureGitIdentityBeforeInstall } from "./git-identity.js";
 import {
@@ -72,12 +83,14 @@ import {
   GABION_HOME,
   GRADLE_SOURCE_ENGINES,
   HEADLESS_ENGINE,
+  RETIRED_RUNTIME_DIR,
   RUNTIME_DIR,
+  STAGED_RUNTIME_DIR,
   TEMPLATE_BUILD_CACHE_DIR,
   TEMPLATE_DIR,
   VERSION_JSON_PATH,
 } from "./constants.js";
-import type { DownloadResponse, InstallStep, RuntimeDownloadResult } from "./types.js";
+import type { AuthConfig, DownloadResponse, InstallStep, RuntimeDownloadResult } from "./types.js";
 
 /** The steps of phase 1, in order. The counter's total is this list's length. */
 const PHASE_ONE_STEPS = [
@@ -85,9 +98,9 @@ const PHASE_ONE_STEPS = [
   { id: "checksum", title: "Verifying SHA-256 checksum" },
   { id: "extract", title: "Extracting archive" },
   { id: "pinned-node", title: "Installing the Node release the runtime runs on" },
-  { id: "runtime-files", title: "Installing runtime files" },
-  { id: "dependencies", title: "Installing runtime dependencies" },
-  { id: "symlinks", title: "Creating workspace symlinks" },
+  { id: "runtime-files", title: "Preparing the new runtime beside the installed one" },
+  { id: "dependencies", title: "Installing its dependencies" },
+  { id: "switch", title: "Switching to the new runtime, its engine sources and project template" },
   { id: "handover", title: "Handing over to the runtime's installer (phase 2)" },
 ] as const satisfies readonly InstallStep[];
 
@@ -110,7 +123,8 @@ export const INSTALL_USAGE =
   "on, then — through the runtime's own installer — engines, verification and the\n" +
   "license for this machine. Running it again repeats only what is missing.\n\n" +
   "On Windows: prepares WSL 2 (installs it and a Linux distribution when absent,\n" +
-  "creates the Linux user) and installs Gabion inside the distribution.";
+  "creates the Linux user) and installs Gabion inside the distribution, which\n" +
+  "keeps the access token from then on; run again, it takes the token from there.";
 
 function fail(commandName: string, message: string): number {
   console.error(`\ngabion ${commandName}: ${message}`);
@@ -204,6 +218,24 @@ function copyEngineSourcesFromArchive(
 }
 
 /**
+ * Put the prepared runtime in the installed one's place: two renames on
+ * one file system, the previous runtime removed after. A process killed
+ * between the renames leaves the previous runtime in RETIRED_RUNTIME_DIR;
+ * the next run prepares a new one anyway.
+ *
+ * MIRROR NOTICE: a copy of switchToStagedRuntime() in the runtime's
+ * formwork/shared/runtime-replacement.ts, whose header gives the reasons —
+ * this CLI cannot import the runtime it is installing. Change both or
+ * neither.
+ */
+function switchToStagedRuntime(): void {
+  rmSync(RETIRED_RUNTIME_DIR, { recursive: true, force: true });
+  if (existsSync(RUNTIME_DIR)) renameSync(RUNTIME_DIR, RETIRED_RUNTIME_DIR);
+  renameSync(STAGED_RUNTIME_DIR, RUNTIME_DIR);
+  rmSync(RETIRED_RUNTIME_DIR, { recursive: true, force: true });
+}
+
+/**
  * Phase 1 and the handover to phase 2, shared by `gabion install` and
  * `gabion self-update`. `commandName` is the command the user typed — it
  * names the headers and the failure messages. Prints no hint about the
@@ -250,13 +282,42 @@ export async function downloadAndInstall(
     logStep("pinned-node");
     const pinnedNode = await ensurePinnedNode(pinnedNodeVersion);
 
-    logStep("runtime-files");
+    logStep("runtime-files", `→ ${STAGED_RUNTIME_DIR}`);
     mkdirSync(GABION_HOME, { recursive: true });
+    // What an interrupted earlier run left here is not the runtime being prepared.
+    rmSync(STAGED_RUNTIME_DIR, { recursive: true, force: true });
+    cpSync(join(archiveRoot, "runtime"), STAGED_RUNTIME_DIR, { recursive: true });
 
-    if (existsSync(RUNTIME_DIR)) {
-      rmSync(RUNTIME_DIR, { recursive: true, force: true });
+    // MIRROR NOTICE: this sequence (approveRuntimeScripts + npm install on
+    // the pinned Node into the prepared runtime, the switch, the
+    // node_modules junction) also exists in the runtime's own
+    // formwork/cli/commands/install.ts (repository mode). The duplication
+    // is forced — the thin CLI cannot import a runtime it is installing.
+    // When changing this sequence, change it there too.
+    logStep("dependencies");
+    approveRuntimeScripts(STAGED_RUNTIME_DIR);
+    // npm of the pinned Node, run on the pinned Node: the dependencies are
+    // installed by the Node that will run them, not by whatever npm PATH
+    // has (inside WSL without a Linux Node, that is Windows's npm).
+    const npmResult = runExternal(
+      pinnedNode,
+      [npmCliOf(PINNED_NODE_DIR), "install", "--omit=dev", "--no-fund", "--no-audit"],
+      { cwd: STAGED_RUNTIME_DIR, stdio: "inherit" },
+    );
+    if (!npmResult.ok) {
+      return fail(
+        commandName,
+        `the new runtime's dependencies did not install (${describeRunFailure("npm", npmResult)}) — see npm's messages above.\n` +
+          "  The installed runtime is left as it was.\n" +
+          `  After fixing the cause, run gabion ${commandName} again.`,
+      );
     }
-    cpSync(join(archiveRoot, "runtime"), RUNTIME_DIR, { recursive: true });
+
+    logStep("switch");
+    switchToStagedRuntime();
+    const topNodeModules = join(GABION_HOME, "node_modules");
+    rmSync(topNodeModules, { recursive: true, force: true });
+    symlinkSync(join(RUNTIME_DIR, "node_modules"), topNodeModules, "junction");
 
     copyEngineSourcesFromArchive(join(archiveRoot, ".engines"), ENGINES_DIR);
 
@@ -286,37 +347,6 @@ export async function downloadAndInstall(
       cpSync(archiveTemplateCache, TEMPLATE_BUILD_CACHE_DIR, { recursive: true });
     }
 
-    copyFileSync(join(archiveRoot, "version.json"), VERSION_JSON_PATH);
-
-    // MIRROR NOTICE: this sequence (approveRuntimeScripts + npm install on
-    // the pinned Node + node_modules junction; steps 6–7 here) also exists
-    // in the runtime's own formwork/cli/commands/install.ts (repository
-    // mode, step 5). The duplication is forced — the thin CLI cannot
-    // import a runtime it is installing. When changing this sequence,
-    // change it there too.
-    logStep("dependencies");
-    approveRuntimeScripts(RUNTIME_DIR);
-    // npm of the pinned Node, run on the pinned Node: the dependencies are
-    // installed by the Node that will run them, not by whatever npm PATH
-    // has (inside WSL without a Linux Node, that is Windows's npm).
-    const npmResult = runExternal(
-      pinnedNode,
-      [npmCliOf(PINNED_NODE_DIR), "install", "--omit=dev", "--no-fund", "--no-audit"],
-      { cwd: RUNTIME_DIR, stdio: "inherit" },
-    );
-    if (!npmResult.ok) {
-      return fail(
-        commandName,
-        `the runtime's dependencies did not install (${describeRunFailure("npm", npmResult)}) — see npm's messages above.\n` +
-          `  After fixing the cause, run gabion ${commandName} again.`,
-      );
-    }
-
-    logStep("symlinks");
-    const topNodeModules = join(GABION_HOME, "node_modules");
-    rmSync(topNodeModules, { recursive: true, force: true });
-    symlinkSync(join(RUNTIME_DIR, "node_modules"), topNodeModules, "junction");
-
     logStep("handover");
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
@@ -344,6 +374,10 @@ export async function downloadAndInstall(
           `  After fixing the cause, run gabion ${commandName} again: it repeats only what is missing.`,
       );
     }
+    // The stamp last: the installation is complete only now. A run that
+    // stopped earlier left the previous stamp, so self-update still offers
+    // this release instead of calling the half-installed one up to date.
+    copyFileSync(join(archiveRoot, "version.json"), VERSION_JSON_PATH);
     return 0;
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
@@ -378,10 +412,32 @@ async function checkTokenBeforeWindowsInstall(token: string, apiUrl: string): Pr
   }
 }
 
+/**
+ * The token a run from Windows carries: the copy inside the distribution
+ * once Gabion is installed there — its one home — else the Windows file
+ * that waits for the first installation (wsl-gabion-home.ts). Null when
+ * neither holds one; a string when Windows cannot tell where it is.
+ */
+function tokenForWindowsInstall(): AuthConfig | string | null {
+  const located = locateWslGabion();
+  if (located.kind === "unreadable") {
+    return `could not tell whether Gabion is already installed inside WSL:\n  ${located.reason}`;
+  }
+  if (located.kind === "installed") {
+    const inside = readTokenInside(located.home);
+    if (inside.kind === "unreadable") {
+      return `could not read ${describeTokenInside(located.home)}: ${inside.reason}`;
+    }
+    if (inside.kind === "present") return inside.config;
+  }
+  return readAuthConfig();
+}
+
 export async function runInstall(args: readonly string[]): Promise<number> {
   const fromWindows = args.includes(FROM_WINDOWS_FLAG);
 
-  const auth = readAuthConfig();
+  const auth = process.platform === "win32" ? tokenForWindowsInstall() : readAuthConfig();
+  if (typeof auth === "string") return fail("install", auth);
   if (auth === null) {
     console.error(
       "Gabion requires an access token to download the runtime.\n\n" +

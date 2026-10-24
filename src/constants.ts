@@ -19,6 +19,15 @@ export const VERSION_JSON_PATH = join(GABION_HOME, "version.json");
 export const RUNTIME_DIR = join(GABION_HOME, "runtime");
 
 /**
+ * Where a new runtime is prepared beside the installed one, and where the
+ * previous one waits for removal during the switch (install.ts). Mirror
+ * of the runtime's STAGED_RUNTIME_DIR_NAME and RETIRED_RUNTIME_DIR_NAME
+ * (formwork/shared/runtime-replacement.ts) — change both or neither.
+ */
+export const STAGED_RUNTIME_DIR = join(GABION_HOME, "runtime.new");
+export const RETIRED_RUNTIME_DIR = join(GABION_HOME, "runtime.old");
+
+/**
  * The CLI entry of the installed runtime: the loader of its bytecode,
  * run on the pinned Node (pinned-node.ts). Mirrors the "cli/gabion"
  * entry of the runtime's launch owner (formwork/config/runtime-entries.ts).
@@ -93,6 +102,14 @@ export const UNINSTALL_PRESERVED_ENTRIES: ReadonlySet<string> = new Set([
   WSL_THIN_CLI_DIR_NAME,
   WSL_NODEJS_DIR_NAME,
 ]);
+
+/**
+ * Windows side only: where `gabion install` put Gabion — the distribution
+ * and its Linux user (wsl-gabion-home.ts). Written by the installation,
+ * read by `gabion auth` and by the next `gabion install`, which go to the
+ * distribution Gabion is in, not to whichever is the default by then.
+ */
+export const WSL_HOME_RECORD_PATH = join(GABION_HOME, "wsl-home.json");
 
 /**
  * Hidden flag of `gabion install`: the command was accepted by this CLI

@@ -1,6 +1,6 @@
 // src/secret-input.ts
 /**
- * Reading a secret so that it is left nowhere: not on the screen, not in
+ * Reading from the terminal. Mostly a secret, so that it is left nowhere: not on the screen, not in
  * the terminal's scrollback (which an assistant working in the same
  * terminal reads), not in the shell's history file, not in the process
  * list. A secret given as a command argument is in all four — PowerShell's
@@ -16,7 +16,12 @@
  * Backspace removes the last character, Ctrl+C cancels; a paste arrives as
  * one chunk of characters. Control characters and escape sequences (arrow
  * keys and the like) are dropped — a secret here is printable ASCII.
+ *
+ * And one plain line shown as typed (askLine), for answers that are not
+ * secrets — a name, a confirmation.
  */
+
+import { createInterface } from "readline";
 
 const ENTER = new Set(["\r", "\n"]);
 const BACKSPACE = new Set(["\u007f", "\b"]);
@@ -88,4 +93,15 @@ export async function readStandardInput(): Promise<string> {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
   }
   return Buffer.concat(chunks).toString("utf-8").trim();
+}
+
+/** One line typed on the terminal, shown as typed. The caller checks process.stdin.isTTY first. */
+export function askLine(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
 }

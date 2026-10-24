@@ -26,9 +26,9 @@
  * neither.
  */
 
-import { createInterface } from "readline";
 import { describeRunFailure, runExternal } from "./run-external.js";
 import type { GitIdentityState, RunExternalResult } from "./types.js";
+import { askLine } from "./secret-input.js";
 
 /** The marker the runtime's doctor puts on a failure only the human can resolve. */
 const HUMAN_ACTION_MARKER = "[ask your user to act]";
@@ -112,17 +112,6 @@ export function configureGitIdentity(name: string, email: string, git: GitRunner
     }
   }
   return null;
-}
-
-/** One line typed on the terminal, shown as typed. The caller checks process.stdin.isTTY first. */
-function askLine(question: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
 }
 
 /** Ask for a name and an address on the terminal until both are usable. */

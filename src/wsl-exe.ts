@@ -30,9 +30,24 @@
  */
 
 import { spawnSync, type SpawnSyncReturns } from "child_process";
+import { existsSync } from "fs";
+import { join } from "path";
+import { describeRunFailure } from "./run-external.js";
 import type { RunExternalResult, WslDistribution } from "./types.js";
 
 const WSL_EXE = "wsl.exe";
+
+/** The packaged WSL; its absence means WSL is not installed and only the inbox stub answers. */
+export const PACKAGED_WSL_EXE = join(
+  process.env["ProgramFiles"] ?? "C:\\Program Files",
+  "WSL",
+  "wsl.exe",
+);
+
+/** Whether WSL itself is installed — the packaged wsl.exe, not the inbox stub. */
+export function isWslInstalled(): boolean {
+  return existsSync(PACKAGED_WSL_EXE);
+}
 
 /** wsl.exe answers in UTF-8 with this variable set (the inbox stub ignores it). */
 const WSL_UTF8_ENVIRONMENT: Readonly<Record<string, string>> = { WSL_UTF8: "1" };
@@ -129,4 +144,33 @@ export function parseDistributionList(text: string): readonly WslDistribution[] 
     distributions.push({ name: tokens.slice(0, -2).join(" "), version, isDefault });
   }
   return distributions;
+}
+
+/** What wsl.exe answered, for a message: how it ended and what it said. */
+export function describeWsl(result: RunExternalResult): string {
+  const output = `${result.stdout}${result.stderr}`.trim();
+  return output === ""
+    ? describeRunFailure("wsl.exe", result)
+    : `${describeRunFailure("wsl.exe", result)}\n${output}`;
+}
+
+export type DistributionListing =
+  | { readonly kind: "listed"; readonly distributions: readonly WslDistribution[] }
+  | { readonly kind: "unreadable"; readonly output: string };
+
+/**
+ * The registered distributions. `--list --quiet` answers an empty list
+ * with nothing and exit 0; `--list --verbose` on an empty list fails with
+ * a message, so the quiet form decides emptiness and the verbose form
+ * supplies versions and the default.
+ */
+export function listDistributions(): DistributionListing {
+  const quiet = wslCapture(["--list", "--quiet"]);
+  if (!quiet.ok) return { kind: "unreadable", output: describeWsl(quiet) };
+  if (quiet.stdout.trim() === "") return { kind: "listed", distributions: [] };
+  const verbose = wslCapture(["--list", "--verbose"]);
+  if (!verbose.ok) return { kind: "unreadable", output: describeWsl(verbose) };
+  const distributions = parseDistributionList(verbose.stdout);
+  if (distributions === null) return { kind: "unreadable", output: verbose.stdout };
+  return { kind: "listed", distributions };
 }

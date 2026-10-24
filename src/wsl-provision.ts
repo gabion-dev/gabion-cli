@@ -59,6 +59,7 @@ export const WSL_PATHS = {
   nodejsDir: `$HOME/${GABION_HOME_DIR_NAME}/${WSL_NODEJS_DIR_NAME}`,
   thinCliDir: `$HOME/${GABION_HOME_DIR_NAME}/${WSL_THIN_CLI_DIR_NAME}`,
   binDir: "$HOME/.local/bin",
+  authFile: `$HOME/${GABION_HOME_DIR_NAME}/auth.json`,
 } as const;
 
 /** The gabion command inside: this CLI's entry on the Node.js the installer brought. */
@@ -92,7 +93,8 @@ function packageFiles(packageRoot: string): readonly string[] {
   return files;
 }
 
-function writeFileLines(target: string, content: Buffer): string {
+/** Shell lines writing `content` to `target` through base64, which no quoting can break. */
+export function writeFileLines(target: string, content: Buffer): string {
   return [`base64 -d > "${target}" <<'${HEREDOC}'`, content.toString("base64"), HEREDOC].join("\n");
 }
 
@@ -188,8 +190,8 @@ export function buildProvisioningScript(input: ProvisioningInput): string {
     "",
     "# The access token, readable by this user only.",
     "umask 077",
-    writeFileLines('$gabion_home/auth.json', Buffer.from(input.authJson, "utf-8")),
-    'echo "   Access token saved in $gabion_home/auth.json"',
+    writeFileLines(WSL_PATHS.authFile, Buffer.from(input.authJson, "utf-8")),
+    `echo "   Access token saved in ${WSL_PATHS.authFile}"`,
     "",
   );
   return `${lines.join("\n")}\n`;

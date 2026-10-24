@@ -42,18 +42,25 @@
  * Every wsl.exe call goes through wsl-exe.ts (encoding, stdin closed but
  * for the stub's installation and programs that talk to the user, `--exec`
  * only). Docker Desktop's own distributions are never chosen as
- * the home for Gabion.
+ * the home for Gabion. Where Gabion went is recorded, and the access
+ * token's one home becomes the distribution (wsl-gabion-home.ts).
  */
 
-import { existsSync } from "fs";
-import { join } from "path";
 import { FROM_WINDOWS_FLAG } from "./constants.js";
-import { serializeAuthConfig } from "./config.js";
+import { removeAuthConfig, serializeAuthConfig } from "./config.js";
 import { packageRoot } from "./package-location.js";
 import { describeRunFailure } from "./run-external.js";
 import { wslSetVersionCommand } from "./preflight.js";
 import type { AuthConfig, RunExternalResult, WslDistribution, WslLinuxUser } from "./types.js";
-import { parseDistributionList, wslCapture, wslConsole } from "./wsl-exe.js";
+import {
+  describeWsl,
+  isWslInstalled,
+  listDistributions,
+  PACKAGED_WSL_EXE,
+  wslCapture,
+  wslConsole,
+} from "./wsl-exe.js";
+import { chooseDistribution, readWslHomeRecord, writeWslHomeRecord } from "./wsl-gabion-home.js";
 import { buildProvisioningScript, WSL_GABION_WRAPPER } from "./wsl-provision.js";
 import {
   askGitIdentity,
@@ -63,21 +70,8 @@ import {
 } from "./git-identity.js";
 import { runExternal } from "./run-external.js";
 
-/** The packaged WSL; its absence means WSL is not installed and only the inbox stub answers. */
-const PACKAGED_WSL_EXE = join(
-  process.env["ProgramFiles"] ?? "C:\\Program Files",
-  "WSL",
-  "wsl.exe",
-);
-
 /** The distribution installed when the machine has none — WSL's own default. */
 const DISTRIBUTION_TO_INSTALL = "Ubuntu";
-
-/** Distributions Docker Desktop registers for itself; never a home for Gabion. */
-const DOCKER_DESKTOP_DISTRIBUTIONS: ReadonlySet<string> = new Set([
-  "docker-desktop",
-  "docker-desktop-data",
-]);
 
 /** Where a distribution names its first-run setup and the uid it gives the user. */
 const DISTRIBUTION_CONF = "/etc/wsl-distribution.conf";
@@ -95,13 +89,6 @@ function step(message: string): void {
 function fail(message: string): number {
   console.error(`\ngabion install: ${message}`);
   return 1;
-}
-
-function describeWsl(result: RunExternalResult): string {
-  const output = `${result.stdout}${result.stderr}`.trim();
-  return output === ""
-    ? describeRunFailure("wsl.exe", result)
-    : `${describeRunFailure("wsl.exe", result)}\n${output}`;
 }
 
 /**
@@ -146,7 +133,7 @@ function restartRequired(): number {
 function installWsl(): number {
   step("WSL is not installed — installing it (Windows asks for administrator approval in a separate window)");
   const result = wslConsole(["--install", "--no-distribution"], "inherit");
-  if (!existsSync(PACKAGED_WSL_EXE)) {
+  if (!isWslInstalled()) {
     if (!result.ok) console.error(`   ${describeWsl(result)}`);
     return fail(
       "WSL was not installed — the approval was declined or the installation failed (its messages are above).\n" +
@@ -162,38 +149,17 @@ function installWsl(): number {
 // Distributions
 // ==========================================
 
-type DistributionListing =
-  | { readonly kind: "listed"; readonly distributions: readonly WslDistribution[] }
-  | { readonly kind: "unreadable"; readonly output: string };
-
 /**
- * The registered distributions. `--list --quiet` answers an empty list
- * with nothing and exit 0; `--list --verbose` on an empty list fails with
- * a message, so the quiet form decides emptiness and the verbose form
- * supplies versions and the default.
+ * The distribution to install into, installing one when the machine has
+ * none — or the exit code of this run. A distribution an earlier
+ * installation went into is taken again even if another became the
+ * default since (wsl-gabion-home.ts).
  */
-function listDistributions(): DistributionListing {
-  const quiet = wslCapture(["--list", "--quiet"]);
-  if (!quiet.ok) return { kind: "unreadable", output: describeWsl(quiet) };
-  if (quiet.stdout.trim() === "") return { kind: "listed", distributions: [] };
-  const verbose = wslCapture(["--list", "--verbose"]);
-  if (!verbose.ok) return { kind: "unreadable", output: describeWsl(verbose) };
-  const distributions = parseDistributionList(verbose.stdout);
-  if (distributions === null) return { kind: "unreadable", output: verbose.stdout };
-  return { kind: "listed", distributions };
-}
-
-/** The distribution Gabion goes into: the default one, unless it belongs to Docker Desktop. */
-function chooseDistribution(distributions: readonly WslDistribution[]): WslDistribution | null {
-  const candidates = distributions.filter((d) => !DOCKER_DESKTOP_DISTRIBUTIONS.has(d.name));
-  return candidates.find((d) => d.isDefault) ?? candidates[0] ?? null;
-}
-
-/** The distribution to install into, installing one when the machine has none — or the exit code of this run. */
 function ensureDistribution(): WslDistribution | { readonly exitCode: number } {
   const listing = listDistributions();
   if (listing.kind === "unreadable") return { exitCode: stateUnreadable(listing.output) };
-  const existing = chooseDistribution(listing.distributions);
+  const recorded = readWslHomeRecord()?.distribution ?? null;
+  const existing = chooseDistribution(listing.distributions, recorded);
   if (existing !== null) return existing;
 
   step(`No Linux distribution — installing ${DISTRIBUTION_TO_INSTALL}`);
@@ -207,7 +173,7 @@ function ensureDistribution(): WslDistribution | { readonly exitCode: number } {
   }
   const after = listDistributions();
   if (after.kind === "unreadable") return { exitCode: stateUnreadable(after.output) };
-  const installed = chooseDistribution(after.distributions);
+  const installed = chooseDistribution(after.distributions, null);
   // A WSL whose components are not yet active says the distribution was
   // installed and registers nothing: the restart has not happened.
   return installed ?? { exitCode: restartRequired() };
@@ -492,7 +458,7 @@ export async function installFromWindows(auth: AuthConfig): Promise<number> {
     "gabion install — preparing WSL 2 (Gabion itself is installed inside the Linux distribution)",
   );
 
-  if (!existsSync(PACKAGED_WSL_EXE)) return installWsl();
+  if (!isWslInstalled()) return installWsl();
   step("WSL is installed");
 
   const distribution = ensureDistribution();
@@ -513,9 +479,19 @@ export async function installFromWindows(auth: AuthConfig): Promise<number> {
 
   const provisioned = provision(distribution.name, user, auth);
   if (provisioned !== null) return provisioned;
+  // The token is inside from here on: a rerun after a failure below finds
+  // the distribution by this record and takes the token from there.
+  writeWslHomeRecord({ distribution: distribution.name, user: user.name });
 
   const installed = installInside(distribution.name, user);
   if (installed !== null) return installed;
+
+  // The token's one home on this machine is the distribution now; a
+  // Windows copy left beside it would drift from the one the runtime uses.
+  removeAuthConfig();
+  console.log(
+    `   The access token is kept inside ${distribution.name} only; gabion auth in PowerShell changes it there.`,
+  );
 
   printNextStep(distribution.name, user);
   return 0;
