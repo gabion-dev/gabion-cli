@@ -33,7 +33,9 @@
  *      /etc/wsl.conf, but WSL takes the default user from its registry,
  *      which only `wsl.exe --manage <distribution> --set-default-user`
  *      writes outside a first launch — so that follows.
- *   5. The distribution has its user — the prerequisites go in
+ *   5. The distribution has its user — git inside learns who commits
+ *      (from Windows's git when it knows, else asked here: the process
+ *      inside has no terminal to ask), the prerequisites go in
  *      (wsl-provision.ts), then `gabion install` runs inside through the
  *      copy of this CLI, and this side prints the next step.
  *
@@ -53,6 +55,13 @@ import { wslSetVersionCommand } from "./preflight.js";
 import type { AuthConfig, RunExternalResult, WslDistribution, WslLinuxUser } from "./types.js";
 import { parseDistributionList, wslCapture, wslConsole } from "./wsl-exe.js";
 import { buildProvisioningScript, WSL_GABION_WRAPPER } from "./wsl-provision.js";
+import {
+  askGitIdentity,
+  configureGitIdentity,
+  GIT_IDENTITY_HINT,
+  gitIdentity,
+} from "./git-identity.js";
+import { runExternal } from "./run-external.js";
 
 /** The packaged WSL; its absence means WSL is not installed and only the inbox stub answers. */
 const PACKAGED_WSL_EXE = join(
@@ -353,6 +362,53 @@ function ensureUser(distribution: string): WslLinuxUser | { readonly exitCode: n
 }
 
 // ==========================================
+// Git's identity inside
+// ==========================================
+
+/**
+ * Make git inside the distribution know who commits, before the
+ * installation runs there (git-identity.ts). The two gits keep separate
+ * configurations (%UserProfile%\.gitconfig and ~/.gitconfig inside), so
+ * an identity Windows's git already knows is copied inside; else it is
+ * asked for here, on this terminal — the inner process has none — or,
+ * without a terminal, named to whoever drives the command. A distribution
+ * without git is left alone: the installation inside says what is lost.
+ */
+async function ensureGitIdentityInside(distribution: string, user: WslLinuxUser): Promise<number | null> {
+  const insideGit = (args: readonly string[]): RunExternalResult =>
+    inside(distribution, user.name, ["git", ...args]);
+  const state = gitIdentity(insideGit, false);
+  if (state.kind === "no-git") return null;
+  if (state.kind === "configured") {
+    step(`Git inside ${distribution} knows you: ${state.name} <${state.email}>`);
+    return null;
+  }
+
+  const windows = gitIdentity((args) => runExternal("git", args, { stdio: "capture" }));
+  let identity: { readonly name: string; readonly email: string };
+  if (windows.kind === "configured") {
+    step(`Git inside ${distribution} gets your identity from Windows's git: ${windows.name} <${windows.email}>`);
+    identity = windows;
+  } else if (process.stdin.isTTY) {
+    step(`Git inside ${distribution} does not know who you are yet`);
+    identity = await askGitIdentity();
+  } else {
+    return fail(
+      `git inside ${distribution} does not know who you are, and no terminal is here to ask.\n` +
+        `  ${GIT_IDENTITY_HINT}\n\n` +
+        "  Set it in Windows (git config --global …, with Git for Windows) or inside the\n" +
+        `  distribution (wsl -d ${distribution} -- git config --global …), then run gabion install again.`,
+    );
+  }
+  const failure = configureGitIdentity(identity.name, identity.email, insideGit);
+  if (failure !== null) {
+    return fail(`git inside ${distribution} did not save the identity: ${failure}\n  Run gabion install again to retry.`);
+  }
+  console.log(`   Git identity inside ${distribution}: ${identity.name} <${identity.email}>`);
+  return null;
+}
+
+// ==========================================
 // Gabion inside
 // ==========================================
 
@@ -431,7 +487,7 @@ function printNextStep(distribution: string, user: WslLinuxUser): void {
 }
 
 /** The whole installation from Windows; the token was read by the caller. */
-export function installFromWindows(auth: AuthConfig): number {
+export async function installFromWindows(auth: AuthConfig): Promise<number> {
   console.log(
     "gabion install — preparing WSL 2 (Gabion itself is installed inside the Linux distribution)",
   );
@@ -451,6 +507,9 @@ export function installFromWindows(auth: AuthConfig): number {
 
   const user = ensureUser(distribution.name);
   if ("exitCode" in user) return user.exitCode;
+
+  const identity = await ensureGitIdentityInside(distribution.name, user);
+  if (identity !== null) return identity;
 
   const provisioned = provision(distribution.name, user, auth);
   if (provisioned !== null) return provisioned;

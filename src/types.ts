@@ -134,6 +134,15 @@ export interface WslDistribution {
 }
 
 /** A Linux user of a distribution, as getent passwd lists it. */
+/**
+ * Whether git knows who makes commits — explicitly, by configuration or
+ * environment, never by its own guess (git-identity.ts).
+ */
+export type GitIdentityState =
+  | { readonly kind: "configured"; readonly name: string; readonly email: string }
+  | { readonly kind: "unconfigured"; readonly missing: readonly ("user.name" | "user.email")[] }
+  | { readonly kind: "no-git" };
+
 export interface WslLinuxUser {
   readonly name: string;
   readonly uid: number;

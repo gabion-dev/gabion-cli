@@ -7,6 +7,7 @@ import { MIN_NODE_MAJOR, RUNTIME_DIR } from "./constants.js";
 import { delegateToFullCli } from "./delegate.js";
 import { detectWsl, locateWslPath } from "./preflight.js";
 import { runExternal } from "./run-external.js";
+import { GIT_IDENTITY_HINT, gitIdentity } from "./git-identity.js";
 import type { WslPathLocation } from "./types.js";
 
 export const DOCTOR_USAGE =
@@ -118,6 +119,17 @@ export async function runDoctor(args: readonly string[]): Promise<number> {
   const gitLine = probe("git", ["--version"]);
   if (gitLine !== null) {
     console.log(`✅ Git: ${gitLine}`);
+    // Who git records as the author — set by the user, never guessed:
+    // the runtime refuses to create a project or a module baseline
+    // without it, and its doctor shows the same line. The name and the
+    // address are the human's to choose, so the marker says so.
+    const identity = gitIdentity();
+    if (identity.kind === "configured") {
+      console.log(`✅ Git identity: ${identity.name} <${identity.email}>`);
+    } else if (identity.kind === "unconfigured") {
+      console.log(`❌ Git identity: ${identity.missing.join(" and ")} not set. ${GIT_IDENTITY_HINT}`);
+      failures++;
+    }
   } else {
     const hint =
       process.platform === "win32"

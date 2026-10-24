@@ -29,6 +29,14 @@ export const ENGINES_DIR = join(GABION_HOME, ".engines");
 
 export const TEMPLATE_DIR = join(GABION_HOME, "template");
 
+/**
+ * The template's compiled classes as a Gradle build cache entry, laid into
+ * the stand's cache by `gabion init`. Mirror of the runtime's
+ * templateBuildCacheDir() (formwork/config/stand-gradle.ts) — change both
+ * or neither.
+ */
+export const TEMPLATE_BUILD_CACHE_DIR = join(GABION_HOME, "template-build-cache");
+
 export const INSTANCES_JSON_PATH = join(GABION_HOME, "instances.json");
 
 export const TOKEN_PREFIX = "gbt_";

@@ -9,6 +9,7 @@
 import { readAuthConfig, readInstalledVersion } from "./config.js";
 import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
 import { downloadAndInstall } from "./install.js";
+import { ensureGitIdentityBeforeInstall } from "./git-identity.js";
 import type { DownloadResponse, RuntimeDownloadResult } from "./types.js";
 
 export const SELF_UPDATE_USAGE =
@@ -50,6 +51,14 @@ export async function runSelfUpdate(
   }
 
   console.log(`gabion self-update — installed runtime ${versionInfo.version}, checking for a newer one\n`);
+
+  // As at install: the runtime's installer refuses without git's identity,
+  // and here the refusal comes before the download (git-identity.ts).
+  const identityRefusal = await ensureGitIdentityBeforeInstall("self-update");
+  if (identityRefusal !== null) {
+    console.error(identityRefusal);
+    return 1;
+  }
 
   let result: RuntimeDownloadResult;
   try {
