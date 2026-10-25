@@ -123,8 +123,9 @@ export function wslConsole(
 /**
  * Parse the answer of `wsl.exe --list --verbose`. The header and the
  * states are English constants of wsl.exe, not localized; the default
- * distribution carries "*" in the first column; the version is the last
- * column. Null when a line does not fit — the caller then shows the raw
+ * distribution carries "*" in the first column; the state is the second
+ * to last column (Running, Stopped, Installing, …) and the version the
+ * last. Null when a line does not fit — the caller then shows the raw
  * answer instead of guessing.
  */
 export function parseDistributionList(text: string): readonly WslDistribution[] | null {
@@ -141,9 +142,24 @@ export function parseDistributionList(text: string): readonly WslDistribution[] 
     if (tokens.length < 3) return null;
     const version = Number(tokens[tokens.length - 1]);
     if (version !== 1 && version !== 2) return null;
-    distributions.push({ name: tokens.slice(0, -2).join(" "), version, isDefault });
+    const state = tokens[tokens.length - 2] ?? "";
+    distributions.push({ name: tokens.slice(0, -2).join(" "), state, version, isDefault });
   }
   return distributions;
+}
+
+/** The state wsl.exe reports for a distribution whose virtual machine is up. */
+export const RUNNING_STATE = "Running";
+
+/**
+ * Said before the first command inside a distribution that is not
+ * running: starting it takes seconds (12 s measured on a cold machine),
+ * during which wsl.exe prints nothing — a silence a user reads as a hang.
+ * To stderr: the command's own answer stays alone on stdout.
+ */
+export function announceStartIfStopped(distribution: WslDistribution): void {
+  if (distribution.state === RUNNING_STATE) return;
+  console.error(`Starting ${distribution.name} — it is stopped, the first command takes a while...`);
 }
 
 /** What wsl.exe answered, for a message: how it ended and what it said. */

@@ -49,6 +49,17 @@ export function parseAuthConfig(text: string, where: string): AuthConfig {
   };
 }
 
+/**
+ * The config as it is after the platform accepted the token just now: the
+ * one place the confirmation time is taken. Every command that gets the
+ * platform's acceptance (gabion auth, auth --status, install,
+ * self-update) records it through here, so "last confirmed" always means
+ * the latest confirmation by any of them — never the date of one command.
+ */
+export function confirmedNow(config: AuthConfig): AuthConfig {
+  return { ...config, lastVerifiedAt: new Date().toISOString() };
+}
+
 /** The saved token of this machine's ~/.gabion, or null when none is saved. */
 export function readAuthConfig(): AuthConfig | null {
   if (!existsSync(AUTH_CONFIG_PATH)) {

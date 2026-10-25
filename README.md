@@ -94,7 +94,7 @@ distribution to WSL 2.
 |-----------------------|---------------------------------------------|
 | `gabion auth`         | Ask for an access token (not shown), verify and save it |
 | `gabion auth --stdin` | The same, reading the token from standard input |
-| `gabion auth --status`| Show current authentication status          |
+| `gabion auth --status`| Ask the platform whether the saved token is accepted now (exit 0 valid, 1 rejected, 2 the platform could not be reached) |
 | `gabion auth --remove`| Remove the token from this machine; it stays valid elsewhere |
 | `gabion auth --revoke`| Revoke the token on the platform for every machine (a leak, a lost machine); asks you to type its first 8 characters; final — a new token comes from the project author |
 | `gabion install`      | Download and install the Gabion runtime; on Windows, prepare WSL 2 and install inside |
@@ -108,6 +108,8 @@ distribution to WSL 2.
 |           Command         |                     Description                    |
 |---------------------------|----------------------------------------------------|
 | `gabion dev`              | Start the development instance                     |
+| `gabion build`            | Build the production JAR between two gates (below) |
+| `gabion clean`            | Remove the build outputs (refused while the stand runs) |
 | `gabion check`            | Gate before a production build (see below)         |
 | `gabion verify-jar`       | Start the built JAR as a server would (see below)  |
 | `gabion java-home`        | Print the home of the Java this machine resolves to|
@@ -123,20 +125,34 @@ distribution to WSL 2.
 | `gabion license activate` | Take the token's seat for this machine             |
 | `gabion license release`  | Give the seat up from this machine                 |
 
+`gabion build` produces the project's production JAR on the developer's
+machine in three steps: `gabion check`, then `./gradlew bootJar` in
+`backend/` on the Java the runtime resolves, then `gabion verify-jar`. A
+project has no Makefile — `make` is not installed on a fresh WSL
+distribution, and the runtime never installs it. Exit codes: `0` — built,
+`1` — a gate or Gradle refused the state, `2` — the build could not be
+performed. A server or CI without the runtime builds with `./gradlew
+bootJar` alone and gets no gates.
+
 `gabion check` asks the running development instance whether its verdict
 covers the current state of the tree and whether anything blocks. It never
 re-computes a verdict — the checker network lives on the instance. Exit
 codes: `0` — clean, `1` — blocking findings exist, `2` — the check could
 not be performed (no project, no running instance, a confirmed hole in the
-checker network, or checks still running). A project's `make build` runs
-it before packaging the production JAR.
+checker network, or checks still running). `gabion build` runs it before
+packaging the production JAR.
 
 `gabion verify-jar` runs after packaging: it starts the built JAR from an
 empty directory in the production profile, without the developer's
 `GABION_*` and `SPRING_*` variables, against a throwaway database, and
 waits for its health endpoint. Exit codes: `0` — healthy, `1` — the JAR
-refused to start, `2` — the check could not be performed. `make build` runs
-it after the JAR is built.
+refused to start, `2` — the check could not be performed. `gabion build`
+runs it after the JAR is built.
+
+`gabion clean` removes what the builds produced — the backend build
+(`./gradlew clean`), the generated API types and the frontend bundles —
+and refuses while the project's development instance is running, because
+the instance owns those files at that moment.
 
 A token has one active machine: `gabion license activate` moves the seat to
 this machine, and the machine that held it stops.
@@ -212,7 +228,7 @@ completeness are never judged.
 6. `gabion starter` manages the visual starter layer. The starter is a separate entity from modules — it provides layout, themes, CSS contract values, and UI fragments. Exactly one starter is always present; it cannot be removed, only replaced. `replace` swaps the current starter for another from the vendored template or the platform, updating templates, styles, and contract files. `package` builds a distributable starter archive from the active starter in the current project.
 7. `gabion solution` commands manage multi-module solutions: `install` reads `gabion-solution.json`, plans each module via the Installation Planner (detecting conflicts and determining keep/replace/choose actions), and installs the full set as a unit including an optional starter. `remove` reverses the installation, restoring any replaced modules and the previous starter from the vendored template. `package` and `export` build distributable archives or populate public repository directories.
 8. `gabion context` commands manage the project documentation layer. `context init` generates the two-layer structure for projects created before the layer existed (new projects get it from `gabion init`) and immediately verifies the result; creation is all-or-nothing and never overwrites existing files. `context check` enforces structural integrity: every reference resolves, references run one way (`work-context/` may point into `ai-context/`, never the reverse), and a reference to a deliberately absent document carries an in-place `<!-- absent: reason -->` declaration with a reason. Exit codes separate the outcomes: 0 clean, 1 problems found, 2 the check could not run.
-9. All development commands (`init`, `dev`, `check`, `verify-jar`, `java-home`, `stop`, `restart`, `instances`, `uninstance`, `gateway`, `license`), module commands, rules commands, starter commands, solution commands, and context commands delegate to the full CLI at `~/.gabion/runtime/cli/gabion.cjs`, run on the runtime's pinned Node.js.
+9. All development commands (`init`, `dev`, `build`, `clean`, `check`, `verify-jar`, `java-home`, `stop`, `restart`, `instances`, `uninstance`, `gateway`, `license`), module commands, rules commands, starter commands, solution commands, and context commands delegate to the full CLI at `~/.gabion/runtime/cli/gabion.cjs`, run on the runtime's pinned Node.js.
 
 ## File Layout
 

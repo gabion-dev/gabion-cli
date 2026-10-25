@@ -60,7 +60,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { readAuthConfig } from "./config.js";
+import { confirmedNow, readAuthConfig, writeAuthConfig } from "./config.js";
 import {
   requestRuntimeDownload,
   verifyToken,
@@ -460,7 +460,10 @@ export async function runInstall(args: readonly string[]): Promise<number> {
       console.error(`\n✖ ${tokenProblem}`);
       return 1;
     }
-    return installFromWindows(auth);
+    // The platform just accepted the token: the copy carried into the
+    // distribution records this confirmation, not the one of whatever
+    // command saved the token before (config.ts).
+    return installFromWindows(confirmedNow(auth));
   }
 
   console.log("gabion install — installing the Gabion runtime under ~/.gabion\n");
@@ -492,6 +495,11 @@ export async function runInstall(args: readonly string[]): Promise<number> {
       `API request failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+
+  // The platform answered the token: a confirmation, recorded as such
+  // (config.ts) — `gabion auth --status` shows it when the platform
+  // cannot be asked.
+  writeAuthConfig(confirmedNow(auth));
 
   if (!isDownloadResponse(result)) {
     console.log("Runtime is already up to date.");

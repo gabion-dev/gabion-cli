@@ -6,7 +6,7 @@
  * the user's request, says what changed.
  */
 
-import { readAuthConfig, readInstalledVersion } from "./config.js";
+import { confirmedNow, readAuthConfig, readInstalledVersion, writeAuthConfig } from "./config.js";
 import { requestRuntimeDownload, ApiError, formatTokenError } from "./api-client.js";
 import { downloadAndInstall } from "./install.js";
 import { ensureGitIdentityBeforeInstall } from "./git-identity.js";
@@ -77,6 +77,11 @@ export async function runSelfUpdate(
     );
     return 1;
   }
+
+  // The platform answered the token: a confirmation, recorded as such
+  // (config.ts) — `gabion auth --status` shows it when the platform
+  // cannot be asked.
+  writeAuthConfig(confirmedNow(auth));
 
   if (!isDownloadResponse(result)) {
     console.log("Already running the latest version.");

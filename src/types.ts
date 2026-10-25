@@ -133,6 +133,8 @@ export type WslPathLocation =
 /** A registered distribution as `wsl.exe --list --verbose` lists it. */
 export interface WslDistribution {
   readonly name: string;
+  /** The STATE column as wsl.exe spells it: Running, Stopped, Installing, … */
+  readonly state: string;
   /** 1 or 2 — the VERSION column. */
   readonly version: number;
   /** Marked with "*" in the listing. */

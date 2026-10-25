@@ -32,7 +32,14 @@ import { dirname } from "path";
 import { parseAuthConfig, serializeAuthConfig } from "./config.js";
 import { WSL_HOME_RECORD_PATH } from "./constants.js";
 import type { AuthConfig, WslDistribution, WslGabionHome } from "./types.js";
-import { describeWsl, isWslInstalled, listDistributions, wslCapture, wslConsole } from "./wsl-exe.js";
+import {
+  announceStartIfStopped,
+  describeWsl,
+  isWslInstalled,
+  listDistributions,
+  wslCapture,
+  wslConsole,
+} from "./wsl-exe.js";
 import { WSL_PATHS, writeFileLines } from "./wsl-provision.js";
 
 /** Distributions Docker Desktop registers for itself; never a home for Gabion. */
@@ -110,6 +117,9 @@ export function locateWslGabion(): WslGabionLocation {
   if (distribution === null) return { kind: "not-installed" };
 
   const asUser = record !== null && record.distribution === distribution.name ? ["-u", record.user] : [];
+  // The first command inside: a stopped distribution starts here, and
+  // every command typed in PowerShell comes through this function first.
+  announceStartIfStopped(distribution);
   const probe = wslCapture([
     "-d",
     distribution.name,

@@ -2,6 +2,7 @@
 
 import { ApiError, revokeToken, verifyToken } from "./api-client.js";
 import {
+  confirmedNow,
   readAuthConfig,
   writeAuthConfig,
   removeAuthConfig,
@@ -32,7 +33,7 @@ const CONFIRM_PREFIX_LENGTH = 8;
 export const AUTH_USAGE =
   "Usage: gabion auth            asks for the token; what you paste is not shown\n" +
   `       gabion auth ${STDIN_FLAG}    reads the token from standard input (scripts, CI)\n` +
-  "       gabion auth --status\n" +
+  "       gabion auth --status      asks the platform whether the saved token is accepted now\n" +
   `       gabion auth ${REMOVE_FLAG}    removes the token from this machine; it stays valid\n` +
   `       gabion auth ${REVOKE_FLAG}    revokes the token on the platform, for every machine\n\n` +
   "Verifies the access token with the platform and saves it in ~/.gabion/auth.json;\n" +
@@ -205,21 +206,31 @@ async function revoke(): Promise<number> {
   return 0;
 }
 
+/** Write a config where this machine keeps its token; null when written, else why not. */
+function persist(where: TokenHome, config: AuthConfig): string | null {
+  if (where.kind === "wsl") {
+    const failure = writeTokenInside(where.home, config);
+    if (failure !== null) return `could not save the token in ${describeTokenInside(where.home)}: ${failure}`;
+    removeAuthConfig();
+    return null;
+  }
+  writeAuthConfig(config);
+  return null;
+}
+
 /** Save a verified token where this machine keeps it; the exit code. */
 function save(config: AuthConfig): number {
   const where = tokenHome();
   if (where === null) return 1;
+  const failure = persist(where, config);
+  if (failure !== null) {
+    console.error(`Could not save the token: ${failure}`);
+    return 1;
+  }
   if (where.kind === "wsl") {
-    const failure = writeTokenInside(where.home, config);
-    if (failure !== null) {
-      console.error(`Could not save the token in ${describeTokenInside(where.home)}: ${failure}`);
-      return 1;
-    }
-    removeAuthConfig();
     console.log(`Token saved to ${describeTokenInside(where.home)} — the one copy on this machine.`);
     return 0;
   }
-  writeAuthConfig(config);
   console.log(`Token saved to ${AUTH_CONFIG_PATH}`);
   if (process.platform === "win32") {
     console.log("gabion install carries it into the WSL distribution and keeps it there.");
@@ -237,7 +248,7 @@ export async function runAuth(args: readonly string[]): Promise<number> {
   }
 
   if (args.includes("--status")) {
-    return printStatus();
+    return status();
   }
 
   const unexpected = args.filter((arg) => arg !== STDIN_FLAG);
@@ -278,11 +289,7 @@ export async function runAuth(args: readonly string[]): Promise<number> {
     }
 
     console.log(`Authenticated as ${result.name ?? "unknown"}.`);
-    return save({
-      token,
-      apiUrl: DEFAULT_API_URL,
-      lastVerifiedAt: new Date().toISOString(),
-    });
+    return save(confirmedNow({ token, apiUrl: DEFAULT_API_URL, lastVerifiedAt: null }));
   } catch (err: unknown) {
     console.error(
       `Failed to verify token: ${err instanceof Error ? err.message : String(err)}`,
@@ -291,7 +298,17 @@ export async function runAuth(args: readonly string[]): Promise<number> {
   }
 }
 
-function printStatus(): number {
+/**
+ * Whether the saved token is accepted by the platform NOW — the question
+ * a status is asked for. The platform is the one owner of that fact; the
+ * saved confirmation time is only what this machine knew last, shown when
+ * the platform cannot be asked and never in its place (a token revoked
+ * yesterday would still carry yesterday's "verified").
+ *
+ * Exit codes: 0 — accepted (or nothing saved: not a failure of anything);
+ * 1 — the platform refused the token; 2 — the platform could not be asked.
+ */
+async function status(): Promise<number> {
   const where = tokenHome();
   if (where === null) return 1;
   const config = readSaved(where);
@@ -307,8 +324,27 @@ function printStatus(): number {
   if (where.kind === "wsl") console.log(`Saved in: ${describeTokenInside(where.home)}`);
   console.log(`Token:    ${maskToken(config.token)}`);
   console.log(`API:      ${config.apiUrl}`);
-  if (config.lastVerifiedAt !== null) {
-    console.log(`Verified: ${config.lastVerifiedAt}`);
+
+  const lastConfirmed =
+    config.lastVerifiedAt === null ? "never confirmed by this machine" : `last confirmed ${config.lastVerifiedAt}`;
+  try {
+    const result = await verifyToken(config.token, config.apiUrl);
+    if (!result.valid) {
+      console.log(`Status:   rejected by the platform — ${result.reason} (${lastConfirmed})`);
+      console.log("          Ask the project author for a new token, then: gabion auth");
+      return 1;
+    }
+    console.log(`Status:   valid — holder ${result.name ?? "unknown"}`);
+    const failure = persist(where, confirmedNow(config));
+    if (failure !== null) {
+      // The answer stands; only the record of it did not. Said, not hidden.
+      console.error(`gabion auth --status: ${failure}`);
+    }
+    return 0;
+  } catch (err: unknown) {
+    console.log(
+      `Status:   unknown — the platform could not be reached: ${err instanceof Error ? err.message : String(err)} (${lastConfirmed})`,
+    );
+    return 2;
   }
-  return 0;
 }
