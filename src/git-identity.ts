@@ -33,9 +33,8 @@ import { askLine } from "./secret-input.js";
 /** The marker the runtime's doctor puts on a failure only the human can resolve. */
 const HUMAN_ACTION_MARKER = "[ask your user to act]";
 
-export const GIT_IDENTITY_HINT =
-  "Git does not know who you are: user.name or user.email is not set.\n" +
-  "  Gabion commits in your projects — the initial commit of gabion init and the\n" +
+const GIT_IDENTITY_INSTRUCTIONS =
+  "Gabion commits in your projects — the initial commit of gabion init and the\n" +
   "  baselines module change tracking measures from — and so do you. Set your\n" +
   "  identity once, for every repository on this machine:\n\n" +
   '       git config --global user.name "Your Name"\n' +
@@ -44,6 +43,14 @@ export const GIT_IDENTITY_HINT =
   "  so the commits count as yours; GitHub's noreply address\n" +
   "  (ID+USERNAME@users.noreply.github.com) works too. The name and the address\n" +
   `  are yours to choose ${HUMAN_ACTION_MARKER}`;
+
+export const GIT_IDENTITY_HINT =
+  `Git does not know who you are: user.name or user.email is not set.\n  ${GIT_IDENTITY_INSTRUCTIONS}`;
+
+/** The same hint naming exactly the keys that are missing — the doctor's line. */
+export function gitIdentityMissingHint(missing: readonly ("user.name" | "user.email")[]): string {
+  return `Git does not know who you are: ${missing.join(" and ")} not set.\n  ${GIT_IDENTITY_INSTRUCTIONS}`;
+}
 
 const GIT_IDENTITY_QUESTION_PREFACE =
   "   Git does not know who you are yet. Gabion commits in your projects (the\n" +

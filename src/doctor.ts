@@ -7,7 +7,7 @@ import { MIN_NODE_MAJOR, RUNTIME_DIR } from "./constants.js";
 import { delegateToFullCli } from "./delegate.js";
 import { detectWsl, locateWslPath } from "./preflight.js";
 import { runExternal } from "./run-external.js";
-import { GIT_IDENTITY_HINT, gitIdentity } from "./git-identity.js";
+import { gitIdentity, gitIdentityMissingHint } from "./git-identity.js";
 import type { WslPathLocation } from "./types.js";
 
 export const DOCTOR_USAGE =
@@ -127,7 +127,7 @@ export async function runDoctor(args: readonly string[]): Promise<number> {
     if (identity.kind === "configured") {
       console.log(`✅ Git identity: ${identity.name} <${identity.email}>`);
     } else if (identity.kind === "unconfigured") {
-      console.log(`❌ Git identity: ${identity.missing.join(" and ")} not set. ${GIT_IDENTITY_HINT}`);
+      console.log(`❌ Git identity: ${gitIdentityMissingHint(identity.missing)}`);
       failures++;
     }
   } else {
