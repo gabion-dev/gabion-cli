@@ -14,6 +14,7 @@ import { runUninstall, UNINSTALL_USAGE } from "./uninstall.js";
 import { delegateToFullCli } from "./delegate.js";
 import { preflight } from "./preflight.js";
 import { packageRoot } from "./package-location.js";
+import { locateWslGabion, readVersionStampInside } from "./wsl-gabion-home.js";
 
 /** Commands handled directly by the thin CLI, each with the help its `--help` prints. */
 const LOCAL_COMMANDS: Readonly<Record<string, { readonly run: CommandHandler; readonly usage: string }>> = {
@@ -35,30 +36,49 @@ function printVersion(): void {
 
 /**
  * The installed runtime's version as the version line shows it. The
- * file is written by `gabion install`; a damaged one is named rather
- * than crashing the version line or printing "undefined".
+ * stamp is written by `gabion install`; a damaged one is named rather
+ * than crashing the version line or printing "undefined". On Windows the
+ * runtime lives inside the WSL distribution, so the stamp is read there
+ * (the distribution wakes for it): the Windows home never has one, and
+ * reading it said "runtime not installed" next to an installed runtime.
  */
 function describeInstalledRuntime(): string {
+  if (process.platform === "win32") {
+    const located = locateWslGabion();
+    if (located.kind === "not-installed") return "runtime not installed";
+    if (located.kind === "unreadable") return `runtime version unknown: ${located.reason}`;
+    const where = `~/.gabion/version.json inside ${located.home.distribution}`;
+    const stamp = readVersionStampInside(located.home);
+    if ("unreadable" in stamp) return `runtime version unknown: could not read ${where}: ${stamp.unreadable}`;
+    if (stamp.text === null) return `runtime not installed inside ${located.home.distribution}`;
+    const read = readVersionStamp(stamp.text, where);
+    return "version" in read ? `runtime ${read.version} inside ${located.home.distribution}` : read.problem;
+  }
   const versionPath = join(homedir(), ".gabion", "version.json");
   if (!existsSync(versionPath)) return "runtime not installed";
+  const read = readVersionStamp(readFileSync(versionPath, "utf-8"), versionPath);
+  return "version" in read ? `runtime ${read.version}` : read.problem;
+}
+
+function readVersionStamp(text: string, where: string): { readonly version: string } | { readonly problem: string } {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(versionPath, "utf-8"));
+    parsed = JSON.parse(text);
   } catch {
-    return `runtime version unknown: ${versionPath} is not valid JSON`;
+    return { problem: `runtime version unknown: ${where} is not valid JSON` };
   }
   if (typeof parsed === "object" && parsed !== null && "version" in parsed) {
     const { version } = parsed;
-    if (typeof version === "string" && version !== "") return `runtime ${version}`;
+    if (typeof version === "string" && version !== "") return { version };
   }
-  return `runtime version unknown: ${versionPath} has no "version"`;
+  return { problem: `runtime version unknown: ${where} has no "version"` };
 }
 
 function printUsage(): void {
   console.log("Usage: gabion <command> [options]");
   console.log("");
   console.log("Setup:");
-  console.log("  auth             Authenticate: asks for the access token (not shown)");
+  console.log("  auth             Authenticate: asks for the access token (shown masked)");
   console.log("  auth --status    Show current authentication status");
   console.log("  auth --remove    Remove the token from this machine (it stays valid)");
   console.log("  auth --revoke    Revoke the token on the platform, for every machine");

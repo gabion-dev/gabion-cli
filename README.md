@@ -20,7 +20,7 @@ Gabion inside a Linux distribution (see below).
 
 ```bash
 npm install -g gabion
-gabion auth            # asks for your access token; what you paste is not shown
+gabion auth            # asks for your access token; what you paste shows masked
 gabion install
 gabion init my-project
 cd my-project
@@ -92,7 +92,7 @@ distribution to WSL 2.
 
 |         Command       |                   Description               |
 |-----------------------|---------------------------------------------|
-| `gabion auth`         | Ask for an access token (not shown), verify and save it |
+| `gabion auth`         | Ask for an access token (shown masked), verify and save it |
 | `gabion auth --stdin` | The same, reading the token from standard input |
 | `gabion auth --status`| Ask the platform whether the saved token is accepted now (exit 0 valid, 1 rejected, 2 the platform could not be reached) |
 | `gabion auth --remove`| Remove the token from this machine; it stays valid elsewhere |

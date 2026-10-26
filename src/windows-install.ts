@@ -378,12 +378,34 @@ async function ensureGitIdentityInside(distribution: string, user: WslLinuxUser)
 // Gabion inside
 // ==========================================
 
+/** Machine names `uname -m` gives for the architectures Gabion ships, in Node's naming. */
+const LINUX_MACHINE_ARCHITECTURES: Readonly<Record<string, "x64" | "arm64">> = {
+  x86_64: "x64",
+  aarch64: "arm64",
+};
+
+/**
+ * The architecture of the distribution itself, asked inside. Not the
+ * architecture of this process: the Node that runs this CLI on Windows
+ * may run under emulation — an x64 Node on ARM Windows reports x64 — and
+ * the Node.js and the runtime archive installed inside must match the
+ * Linux that runs them.
+ */
+function distributionArchitecture(distribution: string): { readonly arch: "x64" | "arm64" } | { readonly failure: string } {
+  const probe = wslCapture(["-d", distribution, "--exec", "uname", "-m"]);
+  if (!probe.ok) return { failure: `could not ask ${distribution} for its architecture: ${describeWsl(probe)}` };
+  const machine = probe.stdout.trim();
+  const arch = LINUX_MACHINE_ARCHITECTURES[machine];
+  return arch !== undefined
+    ? { arch }
+    : { failure: `${distribution} runs on ${machine}; Gabion runs on x86_64 and aarch64` };
+}
+
 function provision(distribution: string, user: WslLinuxUser, auth: AuthConfig): number | null {
   step(`Installing the Gabion CLI and Node.js into ${distribution} for ${user.name}`);
-  const arch = process.arch;
-  if (arch !== "x64" && arch !== "arm64") {
-    throw new Error(`provisioning requested on ${arch}, which preflight does not admit`);
-  }
+  const machine = distributionArchitecture(distribution);
+  if ("failure" in machine) return fail(machine.failure);
+  const { arch } = machine;
   const script = buildProvisioningScript({
     arch,
     authJson: serializeAuthConfig(auth),

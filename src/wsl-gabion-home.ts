@@ -48,7 +48,7 @@ const DOCKER_DESKTOP_DISTRIBUTIONS: ReadonlySet<string> = new Set([
   "docker-desktop-data",
 ]);
 
-/** Exit code of the inside read when no token file is there — an answer, not a failure. */
+/** Exit code of an inside read when the file (token, version stamp) is not there — an answer, not a failure. */
 const NO_TOKEN_EXIT = 3;
 
 /** The CLI copy the installation leaves inside; its manifest marks Gabion as installed there. */
@@ -139,6 +139,22 @@ export function locateWslGabion(): WslGabionLocation {
   return state === "installed"
     ? { kind: "installed", home: { distribution: distribution.name, user } }
     : { kind: "not-installed" };
+}
+
+/** The runtime's version stamp inside, as text; null when there is none, a reason when it cannot be read. */
+export function readVersionStampInside(home: WslGabionHome): { readonly text: string | null } | { readonly unreadable: string } {
+  const result = wslCapture([
+    "-d",
+    home.distribution,
+    "-u",
+    home.user,
+    "--exec",
+    "sh",
+    "-c",
+    `f="${WSL_PATHS.versionFile}"; [ -f "$f" ] || exit ${String(NO_TOKEN_EXIT)}; cat "$f"`,
+  ]);
+  if (result.status === NO_TOKEN_EXIT) return { text: null };
+  return result.ok ? { text: result.stdout } : { unreadable: describeWsl(result) };
 }
 
 /** How the token file inside is named in messages. */

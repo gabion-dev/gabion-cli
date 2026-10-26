@@ -1,21 +1,26 @@
 // src/secret-input.ts
 /**
- * Reading from the terminal. Mostly a secret, so that it is left nowhere: not on the screen, not in
- * the terminal's scrollback (which an assistant working in the same
- * terminal reads), not in the shell's history file, not in the process
- * list. A secret given as a command argument is in all four — PowerShell's
- * PSReadLine keeps the line in its history file unless it contains one of
- * a few words such as "token", and `gabion auth gbt_…` contains none.
+ * Reading from the terminal. Mostly a secret, so that it is left nowhere
+ * whole: not on the screen, not in the terminal's scrollback (which an
+ * assistant working in the same terminal reads), not in the shell's history
+ * file, not in the process list. A secret given as a command argument is in
+ * all four — PowerShell's PSReadLine keeps the line in its history file
+ * unless it contains one of a few words such as "token", and
+ * `gabion auth gbt_…` contains none.
  *
- * Two ways in: a prompt on the terminal with the typing not shown, the way
- * a password is asked for, and standard input for scripts and CI, where no
- * one types.
+ * Two ways in: a prompt on the terminal that echoes a mask instead of the
+ * typing, and standard input for scripts and CI, where no one types.
  *
  * The prompt puts the terminal in raw mode for the time of one line: every
- * key arrives as it is pressed and nothing is echoed. Enter ends the line,
- * Backspace removes the last character, Ctrl+C cancels; a paste arrives as
- * one chunk of characters. Control characters and escape sequences (arrow
- * keys and the like) are dropped — a secret here is printable ASCII.
+ * key arrives as it is pressed and the terminal echoes nothing — the prompt
+ * echoes the mask itself, the first characters as typed and a "*" for each
+ * one after. Without an echo a paste looks like nothing happened and the
+ * user cannot tell whether the secret went in; the mask shows that it did
+ * and how long it is, and the prefix shows which one it was. Enter ends the
+ * line, Backspace removes the last character, Ctrl+C cancels; a paste
+ * arrives as one chunk of characters and shows at once. Control characters
+ * and escape sequences (arrow keys, the brackets of a bracketed paste) are
+ * dropped — a secret here is printable ASCII.
  *
  * And one plain line shown as typed (askLine), for answers that are not
  * secrets — a name, a confirmation.
@@ -36,11 +41,12 @@ function isPrintable(char: string): boolean {
 }
 
 /**
- * Ask for one line on the terminal without showing it. Resolves with the
- * line, or null when the user cancels (Ctrl+C, or Ctrl+D on an empty
- * line). The caller checks process.stdin.isTTY first.
+ * Ask for one line on the terminal, echoed as a mask: the first
+ * `shownPrefix` characters as typed, a "*" for each one after. Resolves
+ * with the line, or null when the user cancels (Ctrl+C, or Ctrl+D on an
+ * empty line). The caller checks process.stdin.isTTY first.
  */
-export function readHiddenLine(prompt: string): Promise<string | null> {
+export function readMaskedLine(prompt: string, shownPrefix: number): Promise<string | null> {
   const input = process.stdin;
   process.stdout.write(prompt);
   input.setRawMode(true);
@@ -59,7 +65,9 @@ export function readHiddenLine(prompt: string): Promise<string | null> {
       resolve(result);
     };
 
+    // The echo of one chunk is written at once: a paste shows as one line.
     const onData = (chunk: string): void => {
+      let echo = "";
       for (const char of chunk) {
         if (escaping) {
           // An escape sequence ends with its first letter or "~".
@@ -69,17 +77,24 @@ export function readHiddenLine(prompt: string): Promise<string | null> {
         if (char === ESCAPE) {
           escaping = true;
         } else if (ENTER.has(char)) {
+          process.stdout.write(echo);
           finish(value);
           return;
         } else if (char === CANCEL || (char === END_OF_INPUT && value === "")) {
+          process.stdout.write(echo);
           finish(null);
           return;
         } else if (BACKSPACE.has(char)) {
-          value = value.slice(0, -1);
+          if (value !== "") {
+            value = value.slice(0, -1);
+            echo += "\b \b";
+          }
         } else if (isPrintable(char)) {
           value += char;
+          echo += value.length <= shownPrefix ? char : "*";
         }
       }
+      process.stdout.write(echo);
     };
 
     input.on("data", onData);

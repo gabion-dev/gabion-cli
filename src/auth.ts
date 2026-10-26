@@ -13,7 +13,7 @@ import {
   TOKEN_PREFIX,
   MIN_TOKEN_LENGTH,
 } from "./constants.js";
-import { askLine, readHiddenLine, readStandardInput } from "./secret-input.js";
+import { askLine, readMaskedLine, readStandardInput } from "./secret-input.js";
 import type { AuthConfig, WslGabionHome } from "./types.js";
 import {
   describeTokenInside,
@@ -27,11 +27,18 @@ const STDIN_FLAG = "--stdin";
 const REMOVE_FLAG = "--remove";
 const REVOKE_FLAG = "--revoke";
 
+/**
+ * Characters of a token shown as they are — by every message, by the prompt
+ * as the token is pasted, and by the platform's panel: enough to tell tokens
+ * apart, not to use one.
+ */
+const SHOWN_PREFIX_LENGTH = 8;
+
 /** Characters of the token typed back to confirm a revocation — the ones every message shows. */
-const CONFIRM_PREFIX_LENGTH = 8;
+const CONFIRM_PREFIX_LENGTH = SHOWN_PREFIX_LENGTH;
 
 export const AUTH_USAGE =
-  "Usage: gabion auth            asks for the token; what you paste is not shown\n" +
+  "Usage: gabion auth            asks for the token; what you paste shows masked\n" +
   `       gabion auth ${STDIN_FLAG}    reads the token from standard input (scripts, CI)\n` +
   "       gabion auth --status      asks the platform whether the saved token is accepted now\n" +
   `       gabion auth ${REMOVE_FLAG}    removes the token from this machine; it stays valid\n` +
@@ -52,7 +59,7 @@ export const AUTH_USAGE =
 
 /** The first characters of a token and a fixed mask — enough to tell tokens apart, not to use one. */
 function maskToken(token: string): string {
-  return `${token.slice(0, 8)}${"*".repeat(8)}`;
+  return `${token.slice(0, SHOWN_PREFIX_LENGTH)}${"*".repeat(8)}`;
 }
 
 /** The token from the terminal prompt or from standard input; null when none was given. */
@@ -65,7 +72,7 @@ async function readToken(fromStdin: boolean): Promise<string | null> {
     );
     return null;
   }
-  return readHiddenLine("Paste your access token and press Enter (it is not shown): ");
+  return readMaskedLine("Paste your access token and press Enter (shown masked): ", SHOWN_PREFIX_LENGTH);
 }
 
 type TokenHome = { readonly kind: "here" } | { readonly kind: "wsl"; readonly home: WslGabionHome };
@@ -152,7 +159,7 @@ async function revoke(): Promise<number> {
     token = saved.token;
   } else {
     console.log("No token is saved on this machine. Paste the token to revoke.");
-    const typed = await readHiddenLine("Token (not shown): ");
+    const typed = await readMaskedLine("Token (shown masked): ", SHOWN_PREFIX_LENGTH);
     if (typed === null || typed === "") {
       console.error("No token was entered; nothing was revoked.");
       return 1;

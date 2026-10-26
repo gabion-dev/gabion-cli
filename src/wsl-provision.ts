@@ -60,6 +60,7 @@ export const WSL_PATHS = {
   thinCliDir: `$HOME/${GABION_HOME_DIR_NAME}/${WSL_THIN_CLI_DIR_NAME}`,
   binDir: "$HOME/.local/bin",
   authFile: `$HOME/${GABION_HOME_DIR_NAME}/auth.json`,
+  versionFile: `$HOME/${GABION_HOME_DIR_NAME}/version.json`,
 } as const;
 
 /** The gabion command inside: this CLI's entry on the Node.js the installer brought. */
