@@ -20,6 +20,7 @@
 // CLI cannot import a runtime it has not yet got running. Change both or
 // neither.
 
+import { spawnSync } from "child_process";
 import {
   existsSync,
   mkdirSync,
@@ -109,6 +110,32 @@ function installedVersion(): string | null {
 }
 
 /**
+ * Start the extracted Node once before trusting it. The release links
+ * against system libraries its archive does not carry — libatomic.so.1 on
+ * Linux among them — and a machine without one gets a binary that cannot
+ * start: found here, with the library named, instead of as a failure of
+ * the first runtime process. The stamp is written only after this passes,
+ * so a rerun after installing the library downloads and checks again.
+ */
+function assertNodeStarts(binary: string, version: string): void {
+  const run = spawnSync(binary, ["--version"], { encoding: "utf-8" });
+  if (run.status === 0 && run.stdout.trim() === `v${version}`) return;
+  const stderr = (run.stderr ?? "").trim();
+  const missing = /error while loading shared libraries: (\S+?): cannot open shared object file/.exec(stderr)?.[1];
+  if (missing !== undefined) {
+    const debianHint = missing === "libatomic.so.1" ? " (Debian and Ubuntu: libatomic1)" : "";
+    throw new Error(
+      `Node ${version} cannot start: this system lacks the shared library ${missing}. ` +
+        `Install the system package that provides it${debianHint}, then run the installation again.`,
+    );
+  }
+  if (run.status === 0) {
+    throw new Error(`The extracted Node reports ${run.stdout.trim()}, not v${version}`);
+  }
+  throw new Error(`Node ${version} does not start: ${run.error?.message ?? (stderr || `exit ${String(run.status)}`)}`);
+}
+
+/**
  * Install the given Node release unless it is already installed. Returns
  * the binary path. Throws with the concrete reason on any failure — a
  * runtime without its Node cannot run, so there is nothing to degrade to.
@@ -150,6 +177,7 @@ export async function ensurePinnedNode(version: string): Promise<string> {
   if (!existsSync(PINNED_NODE_BINARY)) {
     throw new Error(`Node binary not found after extraction: ${PINNED_NODE_BINARY}`);
   }
+  assertNodeStarts(PINNED_NODE_BINARY, version);
   writeFileSync(join(PINNED_NODE_DIR, STAMP_FILENAME), version, "utf-8");
   console.log(`   Node ${version} installed: ${PINNED_NODE_BINARY}`);
   return PINNED_NODE_BINARY;
