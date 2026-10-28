@@ -474,11 +474,19 @@ function printNextStep(distribution: string, user: WslLinuxUser): void {
   );
 }
 
-/** The whole installation from Windows; the token was read by the caller. */
+/**
+ * The command's first line from Windows. Printed by the caller before it
+ * looks for the token: that lookup may start a stopped distribution, and
+ * its "Starting …" line came before the command named itself.
+ */
+export const WINDOWS_INSTALL_HEADER =
+  "gabion install — preparing WSL 2 (Gabion itself is installed inside the Linux distribution)";
+
+/**
+ * The whole installation from Windows; the token was read and the header
+ * printed by the caller.
+ */
 export async function installFromWindows(auth: AuthConfig): Promise<number> {
-  console.log(
-    "gabion install — preparing WSL 2 (Gabion itself is installed inside the Linux distribution)",
-  );
 
   if (!isWslInstalled()) return installWsl();
   step("WSL is installed");

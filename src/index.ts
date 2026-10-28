@@ -119,7 +119,7 @@ function printUsage(): void {
   console.log("  license release  Give the seat up from this machine");
   console.log("");
   console.log("Module management (delegated to full runtime CLI):");
-  console.log("  module install          Install a module from template or platform");
+  console.log("  module install          Install a module from template, platform or local path");
   console.log("  module remove           Remove an installed module");
   console.log("  module restore          Restore a standard module from template");
   console.log("  module replace          Atomically replace one module with another");

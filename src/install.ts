@@ -34,7 +34,7 @@
  * the archive's runtime is copied beside it and its dependencies are
  * installed there; only then the two switch places, and the engine
  * sources and the project template of the same release follow. A failure
- * before the switch — a network drop during `npm install` — leaves the
+ * before the switch — a network drop during `npm ci` — leaves the
  * previous installation working and together. The version stamp is
  * written last, after phase 2: a run that stopped anywhere leaves the
  * previous stamp, so self-update still sees a runtime to replace instead
@@ -71,7 +71,7 @@ import {
 import { runExternal, describeRunFailure } from "./run-external.js";
 import { downloadFile, verifySha256, extractTarGz } from "./archive-fetch.js";
 import { ensurePinnedNode, npmCliOf, PINNED_NODE_DIR } from "./pinned-node.js";
-import { installFromWindows } from "./windows-install.js";
+import { installFromWindows, WINDOWS_INSTALL_HEADER } from "./windows-install.js";
 import { describeTokenInside, locateWslGabion, readTokenInside } from "./wsl-gabion-home.js";
 import { approveRuntimeScripts } from "./runtime-manifest.js";
 import { ensureGitIdentityBeforeInstall } from "./git-identity.js";
@@ -268,6 +268,17 @@ export async function downloadAndInstall(
       return fail(commandName, "archive missing runtime/ directory");
     }
 
+    // The runtime's dependencies are installed exactly as the lock file of
+    // its release pins them; an archive without one is from before
+    // releases delivered it, and its tree would be resolved anew here —
+    // a tree nobody ran or audited — so this CLI does not install it.
+    if (!existsSync(join(archiveRoot, "runtime", "package-lock.json"))) {
+      return fail(
+        commandName,
+        "archive runtime/ carries no package-lock.json — this runtime archive predates delivered lock files",
+      );
+    }
+
     // The archive names the Node release its bytecode was compiled for;
     // an archive without it is from before closed builds and cannot be
     // run by this CLI at all.
@@ -288,7 +299,7 @@ export async function downloadAndInstall(
     rmSync(STAGED_RUNTIME_DIR, { recursive: true, force: true });
     cpSync(join(archiveRoot, "runtime"), STAGED_RUNTIME_DIR, { recursive: true });
 
-    // MIRROR NOTICE: this sequence (approveRuntimeScripts + npm install on
+    // MIRROR NOTICE: this sequence (approveRuntimeScripts + npm ci on
     // the pinned Node into the prepared runtime, the switch, the
     // node_modules junction) also exists in the runtime's own
     // formwork/cli/commands/install.ts (repository mode). The duplication
@@ -298,10 +309,12 @@ export async function downloadAndInstall(
     approveRuntimeScripts(STAGED_RUNTIME_DIR);
     // npm of the pinned Node, run on the pinned Node: the dependencies are
     // installed by the Node that will run them, not by whatever npm PATH
-    // has (inside WSL without a Linux Node, that is Windows's npm).
+    // has (inside WSL without a Linux Node, that is Windows's npm). `npm
+    // ci`, never `npm install`: the tree is the one the release's lock
+    // file pins, not one resolved on this machine and on this day.
     const npmResult = runExternal(
       pinnedNode,
-      [npmCliOf(PINNED_NODE_DIR), "install", "--omit=dev", "--no-fund", "--no-audit"],
+      [npmCliOf(PINNED_NODE_DIR), "ci", "--omit=dev", "--no-fund", "--no-audit"],
       { cwd: STAGED_RUNTIME_DIR, stdio: "inherit" },
     );
     if (!npmResult.ok) {
@@ -436,6 +449,9 @@ function tokenForWindowsInstall(): AuthConfig | string | null {
 export async function runInstall(args: readonly string[]): Promise<number> {
   const fromWindows = args.includes(FROM_WINDOWS_FLAG);
 
+  // From Windows the command names itself first: looking for the token
+  // may start the distribution, which prints its own line.
+  if (process.platform === "win32") console.log(WINDOWS_INSTALL_HEADER);
   const auth = process.platform === "win32" ? tokenForWindowsInstall() : readAuthConfig();
   if (typeof auth === "string") return fail("install", auth);
   if (auth === null) {
