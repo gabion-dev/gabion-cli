@@ -3,12 +3,14 @@
  * Single owner of one-shot external command execution for the thin CLI,
  * and of the Windows shim launch strategy (resolveWindowsShim).
  *
- * MIRROR NOTICE: this file deliberately duplicates
- * formwork/shared/run-external.ts in the runtime repository. The
- * duplication is forced: the thin CLI's job is to install the runtime,
- * so it cannot import from a runtime that may not exist yet. When
- * changing the spawn or signal policy here, change it there — and vice
- * versa.
+ * MIRROR NOTICE: this file deliberately duplicates the signal rule and
+ * the error channel rule of formwork/shared/run-external.ts in the
+ * runtime repository. The duplication is forced: the thin CLI's job is
+ * to install the runtime, so it cannot import from a runtime that may
+ * not exist yet. When changing either rule here, change it there — and
+ * vice versa. The shim launch strategy below is the thin CLI's own: it
+ * runs in Windows PowerShell, the runtime runs only on Linux, macOS and
+ * WSL 2 and spawns every command directly.
  *
  * Why this exists: on Windows, npm installs as a .cmd shim, and
  * Node >= 20 refuses to spawn those without a shell — spawn returns

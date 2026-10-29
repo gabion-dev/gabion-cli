@@ -62,9 +62,6 @@ const GATEWAY_HTTP_PORT = 8099;
  */
 const GATEWAY_UNIT_NAME = "gabion-gateway.service";
 const LAUNCHD_LABEL = "dev.gabion.gateway";
-const WINDOWS_RUN_VALUE_NAME = "GabionGateway";
-const WINDOWS_RUN_KEY_PATH =
-  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
 /** macOS resolver hook file written by `gabion install` (sudo). */
 const MACOS_RESOLVER_PATH = "/etc/resolver/gabion.localhost";
@@ -170,23 +167,6 @@ function removeGatewayAutostart(): void {
       console.log("   Autostart agent removed");
     }
     return;
-  }
-
-  if (process.platform === "win32") {
-    // reg delete /f exits non-zero when the value does not exist, so
-    // the exit status IS the fact "a key was actually removed" — the
-    // message is tied to it, matching the linux/darwin branches which
-    // only report when the artifact existed.
-    const res = spawnSync(
-      "reg",
-      ["delete", WINDOWS_RUN_KEY_PATH, "/v", WINDOWS_RUN_VALUE_NAME, "/f"],
-      { stdio: "ignore" },
-    );
-    // The VBS launcher lives inside ~/.gabion/bin — the blanket removal
-    // below deletes it with the rest of the runtime.
-    if (res.status === 0) {
-      console.log("   Autostart Run key removed");
-    }
   }
 }
 

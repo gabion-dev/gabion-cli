@@ -18,16 +18,11 @@ export const DOCTOR_USAGE =
 
 /**
  * Probe a command and return its first output line, or null if absent.
- * windowsShim is always on: probes target commands that may be .cmd
- * shims on Windows (npm), and their argument lists are fixed flags,
- * which shim mode requires. Real executables tolerate it — the shell
- * is only engaged on Windows for the probe's fixed arguments.
+ * doctor runs on Linux and macOS only (on Windows the preflight sends it
+ * into the distribution), where every probed command is an executable.
  */
 function probe(command: string, args: readonly string[]): string | null {
-  const res = runExternal(command, args, {
-    stdio: "capture",
-    windowsShim: true,
-  });
+  const res = runExternal(command, args, { stdio: "capture" });
   if (!res.ok) {
     return null;
   }
@@ -96,20 +91,7 @@ export async function runDoctor(args: readonly string[]): Promise<number> {
   } else if (npmLine !== null) {
     console.log(`✅ npm: ${npmLine}`);
   } else {
-    // On Windows the most common cause is not a missing npm but
-    // PowerShell ExecutionPolicy blocking the npm.ps1 shim. The policy
-    // never applies to .cmd shims, so routing through cmd.exe is a fix
-    // an agent can execute without changing any machine setting;
-    // Set-ExecutionPolicy is the human-side alternative.
-    const npmHint =
-      process.platform === "win32"
-        ? "not found or blocked. If PowerShell reports 'running scripts is " +
-          "disabled', invoke npm through cmd.exe (cmd /c npm ...) — " +
-          "ExecutionPolicy does not apply to .cmd shims. Alternatively a " +
-          "human can run: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser. " +
-          "If npm is genuinely absent, install Node.js and restart the terminal"
-        : "not found — install Node.js (which provides npm) and restart the terminal";
-    console.log(`❌ npm: ${npmHint}`);
+    console.log("❌ npm: not found — install Node.js (which provides npm) and restart the terminal");
     failures++;
   }
 
@@ -131,12 +113,9 @@ export async function runDoctor(args: readonly string[]): Promise<number> {
       failures++;
     }
   } else {
-    const hint =
-      process.platform === "win32"
-        ? "winget install Git.Git, then restart the terminal"
-        : "install git via your system package manager";
     console.log(
-      `⚠️  Git: not found — modules install without change tracking. To enable: ${hint}`,
+      "⚠️  Git: not found — modules install without change tracking. " +
+        "To enable: install git via your system package manager",
     );
   }
 
