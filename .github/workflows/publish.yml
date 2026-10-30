@@ -27,7 +27,14 @@ permissions:
   id-token: write # required for the npm trusted-publishing OIDC exchange
 
 jobs:
+  # The repository's dependency audit (audit.yml): a version is staged only
+  # while every release this repository pins is current or declared, and the
+  # tree a consumer installs carries no undeclared advisory.
+  audit:
+    uses: ./.github/workflows/audit.yml
+
   publish:
+    needs: [audit]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

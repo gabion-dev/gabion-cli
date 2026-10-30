@@ -12,7 +12,7 @@ Gabion inside a Linux distribution (see below).
 
 ## Requirements
 
-- Node.js 18+ to run this CLI (the runtime brings its own Node.js release)
+- Node.js 22+ to run this CLI (the runtime brings its own Node.js release)
 - Java 25+ (or let `gabion install` download a portable JDK)
 - Git (optional — enables module modification tracking; projects work without it). Git must know your name and email (`git config --global user.name` / `user.email`); `gabion install` asks for them once when they are not set
 

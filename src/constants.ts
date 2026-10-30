@@ -52,7 +52,7 @@ export const TOKEN_PREFIX = "gbt_";
 
 export const MIN_TOKEN_LENGTH = 16;
 
-export const MIN_NODE_MAJOR = 18;
+export const MIN_NODE_MAJOR = 22;
 
 export const ARCHIVE_PREFIX = "gabion-runtime";
 
