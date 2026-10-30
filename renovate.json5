@@ -1,0 +1,20 @@
+// renovate.json5
+//
+// The dependency updates of this repository come from the organisation's
+// Renovate (gabion-dev/renovate-config): the preset below carries the
+// policy — a seven-day release age, grouped and scheduled pull requests,
+// a Dependency Dashboard issue, vulnerability fixes without delay, GitHub
+// Actions pinned by digest. Only what is particular to this repository is
+// written here.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["local>gabion-dev/renovate-config"],
+  packageRules: [
+    {
+      description: "The declarations describe the oldest Node the package runs on (engines: >=22), the user's own Node before anything is installed: declarations of a newer Node would type-check calls Node 22 does not have. The line moves with the engines floor.",
+      matchDatasources: ["npm"],
+      matchPackageNames: ["@types/node"],
+      allowedVersions: "<23",
+    },
+  ],
+}

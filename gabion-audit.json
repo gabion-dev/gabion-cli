@@ -1,18 +1,4 @@
 {
-  "pins": [
-    {
-      "name": "gabion-audit",
-      "files": [
-        ".github/workflows/audit.yml"
-      ],
-      "pattern": "gabion-audit@(\\d[^\\s]*)",
-      "source": {
-        "kind": "npm",
-        "package": "gabion-audit"
-      },
-      "takeBy": "the version after gabion-audit@ in .github/workflows/audit.yml"
-    }
-  ],
   "advisoryTrees": [
     {
       "name": "package",
@@ -20,16 +6,6 @@
       "args": [
         "--omit=dev"
       ]
-    }
-  ],
-  "acceptedLags": [
-    {
-      "source": "npm",
-      "name": "@types/node",
-      "heldLine": "22",
-      "coversLatestLine": "26",
-      "reason": "the declarations describe the oldest Node the CLI runs on (engines: >=22), the user's own Node before anything is installed: declarations of a newer Node would type-check calls Node 22 does not have",
-      "reviewWhen": "the engines floor in package.json moves to a newer Node line"
     }
   ]
 }
